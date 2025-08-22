@@ -36,8 +36,8 @@ To capture this growth, the roadmap is structured into **three standalone phases
   - Basic authentication  
 
 ✅ **Exit Criteria**  
-- p95 search latency < **500ms** (200–1k docs)  
-- Precision@10 ≥ baseline (curated queries)  
+- p95 search latency < **500ms**
+- Precision@10 ≥ baseline  
 - One-click reindex DAG works reliably  
 
 ---
@@ -92,7 +92,7 @@ To capture this growth, the roadmap is structured into **three standalone phases
 ✅ **Exit Criteria**  
 - ≥80% of answers judged **useful & faithful**  
 - Zero hallucinations on curated test set  
-- p95 latency < **2.5s**  
+- p95 latency < **3s**  
 - Every answer contains ≥1 valid citation  
 
 ---
