@@ -1,5 +1,5 @@
 # DocKA  
-**DocKA** is an **Information Retrieval (IR) system** that makes your documents easily searchable.  
+"**Documents-Knowledge-Access (DocKA)**" is an **Information Retrieval (IR) system** that makes your documents easily searchable.  
 
 ---
 
