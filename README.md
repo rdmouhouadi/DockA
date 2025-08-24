@@ -37,7 +37,7 @@ To capture this growth, the roadmap is structured into **three standalone phases
 
 ✅ **Exit Criteria**  
 - p95 search latency < **500ms**
-- Precision@10 ≥ baseline  
+- Precision > baseline  
 - One-click reindex DAG works reliably  
 
 ---
@@ -63,7 +63,7 @@ To capture this growth, the roadmap is structured into **three standalone phases
   - bm25 | vector | hybrid  
 
 ✅ **Exit Criteria**  
-- Improved **NDCG@10** and **Recall@10** vs Phase 1  
+- Improved **NDCG** and **Recall** vs Phase 1  
 - p95 latency < **800ms**  
 - Feedback logs visible in dashboard  
 
@@ -90,7 +90,7 @@ To capture this growth, the roadmap is structured into **three standalone phases
   - Evaluate with **RAGAS**  
 
 ✅ **Exit Criteria**  
-- ≥80% of answers judged **useful & faithful**  
+- >80% of answers judged **useful & faithful**  
 - Zero hallucinations on curated test set  
 - p95 latency < **3s**  
 - Every answer contains ≥1 valid citation  
