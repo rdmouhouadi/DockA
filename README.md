@@ -56,7 +56,7 @@ To capture this growth, the roadmap is structured into **three standalone phases
   - Merge results with **Reciprocal Rank Fusion (RRF)**  
 
 - **Feedback Loop**  
-  - Endpoint to log user judgments (👍 / 👎)  
+  - Endpoint to log user judgments  
   - Store feedback in PostgreSQL  
 
 - **Evaluation Toggles**  
