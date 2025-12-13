@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3"
 
 # ============================================================================
 # DocKA — Docker Compose (Core Platform)
@@ -41,23 +41,42 @@ services:
   postgres:
     image: postgres:15
     container_name: docka_postgres
+    ports:
+    # Exposed for local debugging only
+      - "5432:5432"
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: docka
-      POSTGRES_USER: docka
-      POSTGRES_PASSWORD: docka
+      - POSTGRES_DB: docka
+      - POSTGRES_USER: docka_admin
+      - POSTGRES_PASSWORD: docka_admin
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-    ports:
-      # Exposed for local debugging only
-      - "5432:5432"
-
     networks:
       - docka_net
+  
+  # --------------------------------------------------------------------------
+  # pgAdmin — web based administration tool for PostgreSQL --> to be added
+  # --------------------------------------------------------------------------
+  dpage/pgAdmin4:
+    image: dpage/pgAdmin4
+    container_name: pgAdmin
+    ports:
+      - "5050:5050"
+    
+    environment:
+      - PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
+      - PGADMIN_DEFAULT_PASSWORD: docka_admin
+    
+    restart: always
 
+    depends_on:
+      - postgres
+      
+    networks:
+      - docka_net
 
   # --------------------------------------------------------------------------
   # Elasticsearch — Keyword Search Engine
