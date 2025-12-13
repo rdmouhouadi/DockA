@@ -42,7 +42,6 @@ services:
     image: postgres:15
     container_name: docka_postgres
     ports:
-    # Exposed for local debugging only
       - "5432:5432"
     restart: unless-stopped
 
@@ -74,7 +73,7 @@ services:
 
     depends_on:
       - postgres
-      
+
     networks:
       - docka_net
 
@@ -93,6 +92,8 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
     container_name: docka_elasticsearch
+    ports:
+      - "9200:9200"
     restart: unless-stopped
 
     environment:
@@ -102,10 +103,6 @@ services:
 
     volumes:
       - es_data:/usr/share/elasticsearch/data
-
-    ports:
-      # Exposed for debugging / Kibana (future)
-      - "9200:9200"
 
     networks:
       - docka_net
@@ -126,6 +123,9 @@ services:
   airflow:
     image: apache/airflow:2.8.1
     container_name: docka_airflow
+    ports:
+      # Airflow UI
+      - "8080:8080"
     restart: unless-stopped
 
     environment:
@@ -142,10 +142,6 @@ services:
 
       # Shared data access (documents)
       - ./data:/data
-
-    ports:
-      # Airflow UI
-      - "8080:8080"
 
     depends_on:
       - postgres
@@ -187,6 +183,8 @@ services:
       dockerfile: infra/docker/api.Dockerfile
 
     container_name: docka_api
+    ports:
+      - "8000:8000"
     restart: unless-stopped
 
     environment:
@@ -195,10 +193,6 @@ services:
       POSTGRES_USER: docka
       POSTGRES_PASSWORD: docka
       ELASTICSEARCH_HOST: http://elasticsearch:9200
-
-    ports:
-      # FastAPI endpoint
-      - "8000:8000"
 
     depends_on:
       - postgres
@@ -227,14 +221,13 @@ services:
       dockerfile: infra/docker/ui.Dockerfile
 
     container_name: docka_ui
+    ports:
+      # Streamlit UI
+      - "8501:8501"
     restart: unless-stopped
 
     environment:
       API_BASE_URL: http://api:8000
-
-    ports:
-      # Streamlit UI
-      - "8501:8501"
 
     depends_on:
       - api
