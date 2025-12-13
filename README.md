@@ -1,123 +1,153 @@
 # DocKA  
-"**Documents-Knowledge-Access (DocKA)**" is an **Information Retrieval (IR) system** that makes your documents easily searchable.  
+**Document–Knowledge–Access (DocKA)** is a modular **Information Retrieval (IR) platform**
+designed to make large collections of technical documents easily searchable.
+
+While the long-term vision is to support enterprise use cases such as
+technical support and operations, the primary goal of this project is to
+**document my learning journey in Information Retrieval systems**,
+from classical keyword search to modern Retrieval-Augmented Generation (RAG).
+
+Each phase delivers a **standalone, usable system**, while progressively
+introducing more advanced IR concepts and tooling.
 
 ---
 
-# 🛤️ Roadmap  
+## 🧠 Vision
 
-While the long-term vision is to build a production-ready Information Retrieval (IR) System for enterprise teams and departments, the **core purpose** of this project is to document my learning journey.  
-Each stage reflects how I progressively develop new skills in the IR domain. 
-To capture this growth, the roadmap is structured into **three standalone phases**, where every phase delivers a usable version of the solution.
+DocKA is designed as a **core knowledge platform**, not a single-purpose application.
 
----
+At its core, DocKA provides:
+- Document ingestion and normalization
+- Robust search and retrieval APIs
+- Observability and evaluation hooks
 
-## 📌 Phase 1 — Keyword Search (MVP)  
-
-**🎯 Objective**: Implement a robust baseline system using classic Information Retrieval (IR) methods.  
-
-- **Ingestion (Airflow DAGs)**  
-  - Watch folder / SharePoint → extract text → clean → detect language  
-  - Store metadata in **PostgreSQL**  
-  - Index docs in **Elasticsearch**  
-
-- **Storage**  
-  - PostgreSQL → document metadata (id, path, title, lang, author, checksum)  
-  - Elasticsearch → index `docKA_v1` with analyzers for English/French  
-
-- **Query**  
-  - **Streamlit UI** → **FastAPI** `/search` → **BM25 ranking** → return results with snippets  
-
-- **Observability**  
-  - Basic metrics (latency, query volume)  
-  - Airflow UI for pipelines  
-
-- **Security**  
-  - Internal access only  
-  - Basic authentication  
-
-✅ **Exit Criteria**  
-- p95 search latency < **500ms**
-- Precision > baseline  
-- One-click reindex DAG works reliably  
+Domain-specific applications (e.g. technical support for smart metering systems)
+are intended to be built **on top of DocKA**, without modifying its core.
 
 ---
 
-## 📌 Phase 2 — Semantic Search (Hybrid BM25 + Vectors)  
+## 🛤️ Roadmap
 
-**🎯 Objective**: Enable natural-language queries with semantic understanding, while keeping keyword search.  
-
-- **Ingestion Upgrades**  
-  - Chunk documents (sections/tables)  
-  - Embed chunks with multilingual transformer model  
-  - Store embeddings in **Vector DB** (Qdrant / Weaviate / ES vectors)  
-
-- **Hybrid Retrieval**  
-  - Combine BM25 (Elasticsearch) + vector search  
-  - Merge results with **Reciprocal Rank Fusion (RRF)**  
-
-- **Feedback Loop**  
-  - Endpoint to log user judgments  
-  - Store feedback in PostgreSQL  
-
-- **Evaluation Toggles**  
-  - bm25 | vector | hybrid  
-
-✅ **Exit Criteria**  
-- Improved **NDCG** and **Recall** vs Phase 1  
-- p95 latency < **800ms**  
-- Feedback logs visible in dashboard  
+The roadmap is structured into **three progressive and standalone phases**.
+Each phase reflects a concrete step in my learning curve while remaining
+architecturally consistent with enterprise-grade IR systems.
 
 ---
 
-## 📌 Phase 3 — Retrieval-Augmented Generation (RAG)  
+## 📌 Phase 1 — Keyword Search (MVP)
 
-**🎯 Objective**: Provide natural language answers, grounded in documents, with proper citations.  
+**🎯 Objective**  
+Build a robust and explainable baseline using classical IR techniques.
 
-- **Query Pipeline**  
-  - Query understanding (rewrite/expansion)  
-  - Hybrid retriever (BM25 + semantic)  
-  - Context builder (dedupe, merge chunks, metadata)  
-  - Prompting (multilingual, citation format)  
-  - Generation (LLM call with streaming)  
-  - Guardrails (max tokens, refusal for out-of-scope)  
+### Scope
+- **Ingestion (Airflow DAGs)**
+  - Watch folder / SharePoint
+  - Extract text (PDF, DOCX, HTML)
+  - Clean and normalize content
+  - Detect language
+- **Storage**
+  - PostgreSQL for document metadata
+  - Elasticsearch for keyword search (BM25)
+- **Query**
+  - Streamlit UI
+  - FastAPI `/search` endpoint
+  - BM25 ranking with snippets
+- **Observability**
+  - Airflow UI
+  - Basic latency and query volume metrics
+- **Security**
+  - Internal access only
+  - Basic authentication
 
-- **Endpoints**  
-  - `POST /ask` → returns `{answer, citations}`  
-  - `POST /chat` → multi-turn with memory  
-
-- **Observability**  
-  - Trace retrieval + generation with **Langfuse**  
-  - Evaluate with **RAGAS**  
-
-✅ **Exit Criteria**  
-- >80% of answers judged **useful & faithful**  
-- Zero hallucinations on curated test set  
-- p95 latency < **3s**  
-- Every answer contains ≥1 valid citation  
-
----
-
-## 🏗️ Cross-Phases 
-
-- **Layered Design**: routers, services, adapters, repositories, common utils  
-- **Contracts & Schemas**: versioned APIs, stable doc/chunk schemas  
-- **Ingestion**: idempotent DAGs, delta updates, backfill support  
-- **Quality**: unit tests, relevance tests, linting, typed code  
-- **CI/CD**: GitHub Actions → Docker images → deployments  
-- **Security**: private network, OIDC SSO, secrets in vaults  
-- **Metrics**: latency, query volume, retrieval overlap, feedback score  
+### Exit Criteria
+- p95 search latency < **500 ms**
+- Reindexing DAG is idempotent and reliable
+- Search quality exceeds a simple baseline
 
 ---
 
-## ✅ Milestone Plan (Checklist)  
+## 📌 Phase 2 — Semantic Search (Hybrid BM25 + Vectors)
 
-- **M1 – Infra up**: Docker Compose (Elasticsearch, PostgreSQL, Airflow, API, UI)  
-- **M2 – Ingestion v1**: 200 docs indexed; reindex DAG idempotent  
-- **M3 – Search v1**: BM25 UI live; baseline relevance evaluation
-- **M4 – Semantic v2**: embeddings + hybrid retrieval improve NDCG
-- **M6 – RAG alpha v3**: `/ask` endpoint returns cited answers; traces visible  
-- **M7 – Rollout**: pilot with team; feedback loop enabled  
+**🎯 Objective**  
+Enable natural-language queries by introducing semantic retrieval,
+while preserving keyword search.
+
+### Scope
+- Chunk documents (sections / paragraphs)
+- Embed chunks with a multilingual transformer model
+- Store embeddings in a vector database (FAISS / Qdrant / Weaviate)
+- Hybrid retrieval:
+  - BM25 (Elasticsearch)
+  - Vector similarity search
+  - Reciprocal Rank Fusion (RRF)
+- Feedback loop:
+  - User relevance signals stored in PostgreSQL
+- Retrieval mode toggles:
+  - `bm25 | vector | hybrid`
+
+### Exit Criteria
+- Improved Recall and NDCG compared to Phase 1
+- p95 latency < **800 ms**
+- Feedback data visible and queryable
 
 ---
 
-👉 This roadmap ensures that **each phase stands alone as a functional IR system**, while also showing the progression from classic **`Keywords search → semantic retrieval → modern RAG`**.  
+## 📌 Phase 3 — Retrieval-Augmented Generation (RAG)
+
+**🎯 Objective**  
+Provide natural-language answers grounded in documents,
+with explicit citations and guardrails.
+
+### Scope
+- Query understanding and expansion
+- Hybrid retrieval (BM25 + semantic)
+- Context building (deduplication, chunk merging)
+- Prompting with citation format
+- LLM-based answer generation
+- Guardrails:
+  - Token limits
+  - Out-of-scope refusal
+- Endpoints:
+  - `POST /ask` → `{ answer, citations }`
+  - `POST /chat` → multi-turn interactions
+- Observability:
+  - Tracing with Langfuse
+  - Evaluation with RAGAS
+
+### Exit Criteria
+- >80% of answers judged useful and faithful
+- Zero hallucinations on curated test set
+- p95 latency < **3 seconds**
+- Every answer contains at least one valid citation
+
+---
+
+## 🏗️ Cross-Phase Engineering Principles
+
+- Layered architecture (routers, services, adapters, repositories)
+- Stable contracts and versioned schemas
+- Idempotent ingestion pipelines with backfill support
+- Strong focus on evaluation and observability
+- Unit tests and relevance tests
+- CI/CD-ready (Docker-based)
+- Security-first mindset (private network, secrets management)
+
+---
+
+## 🚀 Future Extensions
+
+Once DocKA core is stable, it will serve as the foundation for
+**domain-specific support applications**, starting with:
+
+- Technical support for **postpaid smart metering solutions**
+- Later extension to **prepaid smart metering solutions**
+
+These extensions will be implemented as **support modules**
+built on top of DocKA, without altering its core architecture.
+
+---
+
+## 📌 Status
+
+🚧 Active development — Phase 1 (Keyword Search MVP)
+
