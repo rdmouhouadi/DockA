@@ -1,4 +1,4 @@
-version: "3"
+version: "3.9"
 
 # ============================================================================
 # DocKA — Docker Compose (Core Platform)
@@ -47,8 +47,8 @@ services:
 
     environment:
       - POSTGRES_DB: docka
-      - POSTGRES_USER: docka_admin
-      - POSTGRES_PASSWORD: docka_admin
+      - POSTGRES_USER: docka
+      - POSTGRES_PASSWORD: docka
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -59,15 +59,15 @@ services:
   # --------------------------------------------------------------------------
   # pgAdmin — web based administration tool for PostgreSQL --> to be added
   # --------------------------------------------------------------------------
-  dpage/pgAdmin4:
-    image: dpage/pgAdmin4
+  pgadmin:
+    image: dpage/pgadmin4
     container_name: pgAdmin
     ports:
-      - "5050:5050"
+      - "5050:80"
     
     environment:
       - PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
-      - PGADMIN_DEFAULT_PASSWORD: docka_admin
+      - PGADMIN_DEFAULT_PASSWORD: docka
     
     restart: always
 
