@@ -1,0 +1,245 @@
+version: "3.9"
+
+# ============================================================================
+# DocKA — Docker Compose (Core Platform)
+#
+# This compose file deploys the DocKA Core architecture:
+# - Metadata store (PostgreSQL)
+# - Search engine (Elasticsearch)
+# - Ingestion orchestrator (Airflow)
+# - Retrieval API (FastAPI)
+# - User Interface (Streamlit)
+#
+# Scope:
+# - Local development
+# - Proof of Concept (POC)
+# - Architecture validation
+#
+# Non-goals:
+# - High availability
+# - Security hardening
+# - Cloud-managed services
+# ============================================================================
+
+services:
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL — Metadata Store
+  #
+  # Stores authoritative document metadata:
+  # - document_id
+  # - source_path
+  # - title
+  # - language
+  # - checksum
+  # - ingestion timestamps
+  #
+  # IMPORTANT:
+  # - This DB does NOT store full document text for retrieval
+  # - Elasticsearch is considered a disposable index
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: docka_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: docka
+      POSTGRES_USER: docka
+      POSTGRES_PASSWORD: docka
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    ports:
+      # Exposed for local debugging only
+      - "5432:5432"
+
+    networks:
+      - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # Elasticsearch — Keyword Search Engine
+  #
+  # Provides:
+  # - Full-text indexing
+  # - BM25 ranking
+  # - Language-specific analyzers (EN / FR)
+  #
+  # Notes:
+  # - Single-node setup for POC
+  # - Indexes are rebuildable from ingestion pipelines
+  # --------------------------------------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: docka_elasticsearch
+    restart: unless-stopped
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+    ports:
+      # Exposed for debugging / Kibana (future)
+      - "9200:9200"
+
+    networks:
+      - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # Airflow — Ingestion Orchestrator
+  #
+  # Orchestrates document ingestion pipelines:
+  # - Watch folders / sources
+  # - Extract text
+  # - Clean & normalize
+  # - Store metadata
+  # - Index into Elasticsearch
+  #
+  # This is a simplified, single-container Airflow setup suitable for POC.
+  # --------------------------------------------------------------------------
+  airflow:
+    image: apache/airflow:2.8.1
+    container_name: docka_airflow
+    restart: unless-stopped
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+    volumes:
+      # DAGs defining ingestion pipelines
+      - ./ingestion/airflow/dags:/opt/airflow/dags
+
+      # Optional plugins (hooks, operators)
+      - ./ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Shared data access (documents)
+      - ./data:/data
+
+    ports:
+      # Airflow UI
+      - "8080:8080"
+
+    depends_on:
+      - postgres
+
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create
+        --username admin
+        --password admin
+        --firstname admin
+        --lastname admin
+        --role Admin
+        --email admin@example.com &&
+      airflow webserver & airflow scheduler
+      "
+
+    networks:
+      - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # FastAPI — Retrieval API
+  #
+  # Acts as the single entry point for retrieval logic:
+  # - /search (BM25)
+  # - future: /ask, /chat, /feedback
+  #
+  # This service:
+  # - Talks to Elasticsearch for search
+  # - Talks to PostgreSQL for metadata
+  #
+  # IMPORTANT:
+  # - No domain-specific logic lives here
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+
+    container_name: docka_api
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: docka
+      POSTGRES_USER: docka
+      POSTGRES_PASSWORD: docka
+      ELASTICSEARCH_HOST: http://elasticsearch:9200
+
+    ports:
+      # FastAPI endpoint
+      - "8000:8000"
+
+    depends_on:
+      - postgres
+      - elasticsearch
+
+    networks:
+      - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # Streamlit — User Interface
+  #
+  # Provides a lightweight UI for:
+  # - Submitting queries
+  # - Viewing ranked results
+  # - Inspecting snippets
+  #
+  # Intended for:
+  # - Demos
+  # - Debugging
+  # - Internal users
+  # --------------------------------------------------------------------------
+  ui:
+    build:
+      context: .
+      dockerfile: infra/docker/ui.Dockerfile
+
+    container_name: docka_ui
+    restart: unless-stopped
+
+    environment:
+      API_BASE_URL: http://api:8000
+
+    ports:
+      # Streamlit UI
+      - "8501:8501"
+
+    depends_on:
+      - api
+
+    networks:
+      - docka_net
+
+
+# ---------------------------------------------------------------------------
+# Volumes
+#
+# Persistent storage for stateful services.
+# Safe to delete during development if a full reset is needed.
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+  es_data:
+
+
+# ---------------------------------------------------------------------------
+# Networks
+#
+# Single private bridge network for all DocKA services.
+# ---------------------------------------------------------------------------
+networks:
+  docka_net:
+    driver: bridge
