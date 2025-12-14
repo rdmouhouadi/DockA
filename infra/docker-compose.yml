@@ -181,7 +181,7 @@ services:
   api:
     build:
       context: ..
-      dockerfile: docker/api.Dockerfile
+      dockerfile: infra/docker/api.Dockerfile
 
     container_name: docka_api
     ports:
@@ -219,7 +219,7 @@ services:
   ui:
     build:
       context: ..
-      dockerfile: docker/ui.Dockerfile
+      dockerfile: infra/docker/ui.Dockerfile
 
     container_name: docka_ui
     ports:
