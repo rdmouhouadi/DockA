@@ -1,4 +1,4 @@
-version: "3.9"
+#version: "3"
 
 # ============================================================================
 # DocKA — Docker Compose (Core Platform)
@@ -46,9 +46,9 @@ services:
     restart: unless-stopped
 
     environment:
-      - POSTGRES_DB: docka
-      - POSTGRES_USER: docka
-      - POSTGRES_PASSWORD: docka
+      POSTGRES_DB: docka
+      POSTGRES_USER: docka
+      POSTGRES_PASSWORD: docka
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -57,17 +57,17 @@ services:
       - docka_net
   
   # --------------------------------------------------------------------------
-  # pgAdmin — web based administration tool for PostgreSQL --> to be added
+  # pgAdmin — PostgreSQL Admin UI
   # --------------------------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgAdmin
+    container_name: docka_pgadmin
     ports:
       - "5050:80"
     
     environment:
-      - PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
-      - PGADMIN_DEFAULT_PASSWORD: docka
+      PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: docka
     
     restart: always
 
@@ -97,9 +97,9 @@ services:
     restart: unless-stopped
 
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
 
     volumes:
       - es_data:/usr/share/elasticsearch/data
@@ -132,16 +132,17 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
 
     volumes:
       # DAGs defining ingestion pipelines
-      - ./ingestion/airflow/dags:/opt/airflow/dags
+      - ../ingestion/airflow/dags:/opt/airflow/dags
 
       # Optional plugins (hooks, operators)
-      - ./ingestion/airflow/plugins:/opt/airflow/plugins
+      - ../ingestion/airflow/plugins:/opt/airflow/plugins
 
       # Shared data access (documents)
-      - ./data:/data
+      - ../data:/data
 
     depends_on:
       - postgres
@@ -180,7 +181,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: infra/docker/api.Dockerfile
+      dockerfile: docker/api.Dockerfile
 
     container_name: docka_api
     ports:
@@ -218,7 +219,7 @@ services:
   ui:
     build:
       context: .
-      dockerfile: infra/docker/ui.Dockerfile
+      dockerfile: docker/ui.Dockerfile
 
     container_name: docka_ui
     ports:
