@@ -67,7 +67,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 #
 # This keeps the image clean and focused.
 # ---------------------------------------------------------------------------
-COPY app/api ./app/api
+COPY app/api ./app/backend_api
 COPY app/common ./app/common
 
 # ---------------------------------------------------------------------------
