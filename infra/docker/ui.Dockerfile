@@ -55,7 +55,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 #
 # Only the UI code is copied here.
 # ---------------------------------------------------------------------------
-COPY app/ui ./app/ui
+COPY app/frontend ./app/frontend
 
 # ---------------------------------------------------------------------------
 # Expose port
