@@ -83,4 +83,4 @@ EXPOSE 8000
 # Uvicorn runs the FastAPI app.
 # In production, this could be replaced by Gunicorn + Uvicorn workers.
 # ---------------------------------------------------------------------------
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.backend_api.api_main:app", "--host", "0.0.0.0", "--port", "8000"]
