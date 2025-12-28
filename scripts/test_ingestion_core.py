@@ -1,8 +1,12 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import psycopg2
 from pathlib import Path
-from ingestion.core.loader import scan_directory
-from ingestion.core.checksum import file_checksum
-from ingestion.core.repository import document_exists, insert_document
+from Ingestion.core.loader import scan_directory
+from Ingestion.core.checksum import file_checksum
+from Ingestion.core.repository import document_exists, insert_document
 import uuid
 
 DB_CONFIG = {
@@ -19,7 +23,7 @@ def main():
     base_path = "data/raw"
 
     for file_path in scan_directory(base_path):
-        checksum = file_checksum(file_path)
+        checksum = file_checksum(str(file_path))
 
         if document_exists(conn, checksum):
             print(f"[SKIP] {file_path.name}")
