@@ -43,6 +43,107 @@ thanks to checksum-based detection.
 Idempotency is enforced using content-based checksums, allowing safe re-ingestion,
 backfills, and retries without duplicating documents.
 
+---
+
+## 📜 Ingestion Contract
+
+This section defines the **formal contract** between the different layers
+of the DocKA ingestion system.
+
+The purpose of this contract is to ensure that:
+- ingestion logic remains consistent
+- extractors are interchangeable
+- pipelines remain stable as the system evolves
+
+---
+
+### 1️⃣ Raw Document (Input Contract)
+
+A **Raw Document** represents a file discovered by the ingestion system
+before any content extraction.
+
+**Required fields:**
+
+| Field | Description |
+|----|----|
+| `path` | Absolute or relative filesystem path |
+| `filename` | File name |
+| `extension` | File extension (pdf, docx, html, txt, …) |
+| `checksum` | Content-based checksum (used for idempotency) |
+| `source` | Origin of the document (filesystem, sharepoint, api, …) |
+
+This contract is produced by the **loader** and consumed by extractors.
+
+---
+
+### 2️⃣ Extractor Contract
+
+Each extractor must implement the following behavior:
+
+**Input**
+- A single Raw Document
+
+**Output**
+- Extracted textual content
+- Minimal metadata inferred from the document
+
+**Guaranteed output fields:**
+
+| Field | Description |
+|----|----|
+| `content` | Extracted raw text |
+| `title` | Document title (if available) |
+| `language` | Detected or inferred language |
+| `metadata` | Optional format-specific metadata |
+
+Extractors:
+- must not perform persistence
+- must not perform deduplication
+- must not depend on orchestration frameworks
+
+---
+
+### 3️⃣ Normalized Document (Core Output)
+
+After extraction and normalization, documents are represented internally
+as **Normalized Documents**.
+
+**Guaranteed fields:**
+
+| Field | Description |
+|----|----|
+| `doc_id` | Stable document identifier |
+| `source` | Document origin |
+| `path` | Original path |
+| `title` | Normalized title |
+| `language` | Normalized language code |
+| `content` | Cleaned, normalized text |
+| `checksum` | Content checksum |
+
+This representation is the **canonical form** used by DocKA Core.
+
+---
+
+### 4️⃣ Persistence Guarantees
+
+DocKA ingestion guarantees that:
+
+- Documents are ingested **idempotently**
+- Re-ingesting unchanged documents does not create duplicates
+- Metadata persistence is atomic
+- Content extraction and persistence are decoupled
+
+The PostgreSQL database is the **source of truth** for document metadata.
+
+---
+
+### 5️⃣ Contract Stability
+
+This ingestion contract is considered **stable** across DocKA Core versions.
+
+Future extensions (semantic search, RAG, support modules, agents) must:
+- extend this contract without breaking it
+- or introduce new contracts explicitly
 
 ---
 
