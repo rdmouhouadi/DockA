@@ -1,9 +1,10 @@
 import psycopg2
 from pathlib import Path
-from Ingestion.core.loader import scan_directory
+import uuid
+
+from Ingestion.core.loader import load_file
 from Ingestion.core.checksum import file_checksum
 from Ingestion.core.repository import document_exists, insert_document
-import uuid
 
 DB_CONFIG = {
     "host": "localhost",
@@ -16,14 +17,16 @@ DB_CONFIG = {
 def main():
     conn = psycopg2.connect(**DB_CONFIG)
 
-    base_path = "data/raw"
+    folder = Path("data/samples/CrystalcloudDoc")
 
-    for file_path in scan_directory(base_path):
+    for file_path in folder.glob("*.pdf"):
         checksum = file_checksum(str(file_path))
 
         if document_exists(conn, checksum):
-            print(f"[SKIP] {file_path.name}")
+            print("[SKIP]", file_path.name)
             continue
+
+        text = load_file(file_path)
 
         doc = {
             "doc_id": str(uuid.uuid4()),
@@ -32,10 +35,11 @@ def main():
             "title": file_path.stem,
             "language": "en",
             "checksum": checksum,
+            "content": text,
         }
 
         insert_document(conn, doc)
-        print(f"[INGESTED] {file_path.name}")
+        print("[INGESTED]", file_path.name)
 
     conn.close()
 
