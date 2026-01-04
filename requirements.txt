@@ -3,6 +3,7 @@ fastapi
 uvicorn
 psycopg2-binary
 elasticsearch
+pypdf
 
 # --- UI ---
 streamlit
