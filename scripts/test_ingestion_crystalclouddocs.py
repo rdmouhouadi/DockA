@@ -33,7 +33,7 @@ def main():
             "source": "filesystem",
             "path": str(file_path),
             "title": file_path.stem,
-            "language": "en",
+            "language": "fr",
             "checksum": checksum,
             "content": text,
         }
