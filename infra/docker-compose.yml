@@ -145,6 +145,9 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
+      AIRFLOW__WEBSERVER__SECRET_KEY: "qYk6W6x9X7pZb5uC8c3K8cZq9lQ0mV0nN4hX1X8ZxQ="
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       PYTHONPATH: /opt/airflow
 
     volumes:
@@ -162,6 +165,9 @@ services:
 
       # Shared data access (documents)
       - ../data:/data
+
+      # Shared logs access
+      - airflow_logs:/opt/airflow/logs
 
     depends_on:
       - postgres
@@ -205,6 +211,9 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
+      AIRFLOW__WEBSERVER__SECRET_KEY: "qYk6W6x9X7pZb5uC8c3K8cZq9lQ0mV0nN4hX1X8ZxQ="
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       PYTHONPATH: /opt/airflow
 
     volumes:
@@ -213,6 +222,7 @@ services:
       - ../Ingestion:/opt/airflow/Ingestion
       - ../app:/opt/airflow/app
       - ../data:/data
+      - airflow_logs:/opt/airflow/logs
 
     depends_on:
       - postgres
@@ -308,6 +318,7 @@ services:
 volumes:
   postgres_data:
   es_data:
+  airflow_logs:
 
 
 # ---------------------------------------------------------------------------
