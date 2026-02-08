@@ -156,7 +156,7 @@ services:
         --firstname admin
         --lastname admin
         --role Admin
-        --email admin@example.com &&
+        --email rd.mouhouadi@gmail.com || true &&
       airflow webserver & airflow scheduler
       "
 
