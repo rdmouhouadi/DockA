@@ -8,18 +8,19 @@ from Ingestion.pipelines.ingest_folder import ingest_folder
 
 
 # ---- Configuration (can later move to Airflow Variables) ----
-DATA_ROOT = Path("/opt/airflow/data/samples/CrystalcloudDoc")
+DATA_ROOT = Path("/data/samples")
 
 
 def run_ingestion():
-    result = ingest_folder(DATA_ROOT)
+    result = ingest_folder(root_path=DATA_ROOT,
+                           source="sample")
     print("Ingestion summary:", result)
 
 
 with DAG(
     dag_id="docka_ingest_documents",
     description="Ingest documents into DocKA knowledge base",
-    start_date=datetime(2024, 1, 1),
+    start_date=datetime(2025, 1, 1),
     schedule_interval=None,  # manual trigger for now
     catchup=False,
     tags=["docka", "ingestion"],
