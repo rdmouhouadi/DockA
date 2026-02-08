@@ -118,13 +118,22 @@ services:
   # - Store metadata
   # - Index into Elasticsearch
   #
-  # This is a simplified, single-container Airflow setup suitable for POC.
+  # This is a simplified, dual-container Airflow setup suitable for POC but also production ready
   # --------------------------------------------------------------------------
-  airflow:
+
+  # --------------------------------------------------------------------------
+  # Airflow Webserver — UI
+  #
+  # Provides:
+  # - Airflow UI (DAGs, logs, manual triggers)
+  #
+  # Runs as the main foreground process to ensure
+  # port 8080 is properly exposed.
+  # --------------------------------------------------------------------------
+  airflow-webserver:
     image: apache/airflow:2.8.1
-    container_name: docka_airflow
+    container_name: docka_airflow_webserver
     ports:
-      # Airflow UI
       - "8080:8080"
     restart: unless-stopped
 
@@ -133,13 +142,20 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      PYTHONPATH: /opt/airflow
 
     volumes:
       # DAGs defining ingestion pipelines
-      - ../ingestion/airflow/dags:/opt/airflow/dags
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
 
-      # Optional plugins (hooks, operators)
-      - ../ingestion/airflow/plugins:/opt/airflow/plugins
+      # Optional plugins
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Ingestion domain package
+      - ../Ingestion:/opt/airflow/Ingestion
+
+      # App code (DocKA Core)
+      - ../app:/opt/airflow/app
 
       # Shared data access (documents)
       - ../data:/data
@@ -156,13 +172,53 @@ services:
         --firstname admin
         --lastname admin
         --role Admin
-        --email admin@example.com &&
-      airflow webserver & airflow scheduler
+        --email rd.mouhouadi@gmail.com || true &&
+      exec airflow webserver
       "
 
     networks:
       - docka_net
 
+
+  # --------------------------------------------------------------------------
+  # Airflow Scheduler — DAG execution engine
+  #
+  # Responsible for:
+  # - Scheduling DAG runs
+  # - Executing ingestion tasks
+  #
+  # No ports exposed.
+  # --------------------------------------------------------------------------
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    container_name: docka_airflow_scheduler
+    restart: unless-stopped
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      PYTHONPATH: /opt/airflow
+
+    volumes:
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+      - ../Ingestion:/opt/airflow/Ingestion
+      - ../app:/opt/airflow/app
+      - ../data:/data
+
+    depends_on:
+      - postgres
+      - airflow-webserver
+
+    command: >
+      bash -c "
+      exec airflow scheduler
+      "
+
+    networks:
+      - docka_net
 
   # --------------------------------------------------------------------------
   # FastAPI — Retrieval API
