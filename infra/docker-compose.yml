@@ -146,10 +146,10 @@ services:
 
     volumes:
       # DAGs defining ingestion pipelines
-      - ../ingestion/airflow/dags:/opt/airflow/dags
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
 
       # Optional plugins
-      - ../ingestion/airflow/plugins:/opt/airflow/plugins
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
 
       # Ingestion domain package
       - ../Ingestion:/opt/airflow/Ingestion
@@ -202,8 +202,8 @@ services:
       PYTHONPATH: /opt/airflow
 
     volumes:
-      - ../ingestion/airflow/dags:/opt/airflow/dags
-      - ../ingestion/airflow/plugins:/opt/airflow/plugins
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
       - ../Ingestion:/opt/airflow/Ingestion
       - ../app:/opt/airflow/app
       - ../data:/data
