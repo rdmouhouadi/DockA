@@ -142,6 +142,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      PYTHONPATH: /opt/airflow
 
     volumes:
       # DAGs defining ingestion pipelines
@@ -149,6 +150,9 @@ services:
 
       # Optional plugins
       - ../ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Ingestion domain package
+      - ../Ingestion:/opt/airflow/Ingestion
 
       # App code (DocKA Core)
       - ../app:/opt/airflow/app
@@ -195,10 +199,12 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      PYTHONPATH: /opt/airflow
 
     volumes:
       - ../ingestion/airflow/dags:/opt/airflow/dags
       - ../ingestion/airflow/plugins:/opt/airflow/plugins
+      - ../Ingestion:/opt/airflow/Ingestion
       - ../app:/opt/airflow/app
       - ../data:/data
 
