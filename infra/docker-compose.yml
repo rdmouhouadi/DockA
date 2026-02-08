@@ -131,7 +131,9 @@ services:
   # port 8080 is properly exposed.
   # --------------------------------------------------------------------------
   airflow-webserver:
-    image: apache/airflow:2.8.1
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
     container_name: docka_airflow_webserver
     ports:
       - "8080:8080"
@@ -142,6 +144,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
       PYTHONPATH: /opt/airflow
 
     volumes:
@@ -190,7 +193,9 @@ services:
   # No ports exposed.
   # --------------------------------------------------------------------------
   airflow-scheduler:
-    image: apache/airflow:2.8.1
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
     container_name: docka_airflow_scheduler
     restart: unless-stopped
 
@@ -199,6 +204,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
       PYTHONPATH: /opt/airflow
 
     volumes:
