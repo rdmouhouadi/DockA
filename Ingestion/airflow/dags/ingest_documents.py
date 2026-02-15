@@ -24,7 +24,7 @@ with DAG(
     dag_id="docka_ingest_documents",
     description="Ingest documents into DocKA knowledge base",
     start_date=datetime(2025, 1, 1),
-    schedule_interval=None,  # manual trigger
+    schedule=None,  # manual trigger --> to be changed to daily
     catchup=False,
     tags=["docka", "ingestion"],
 ) as dag:
