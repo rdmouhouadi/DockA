@@ -44,6 +44,12 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg-isready -U docka"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
     environment:
       POSTGRES_DB: docka
@@ -95,6 +101,12 @@ services:
     ports:
       - "9200:9200"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://elasticsearch:9200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
     environment:
       discovery.type: single-node
@@ -259,6 +271,12 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
     environment:
       POSTGRES_HOST: postgres
