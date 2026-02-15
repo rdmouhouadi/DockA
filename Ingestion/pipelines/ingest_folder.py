@@ -4,6 +4,13 @@ from Ingestion.core.checksum import file_checksum
 from Ingestion.core.repository import document_exists, insert_document
 import psycopg2
 import uuid
+import logging
+import json
+import time
+
+
+logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
 
 
 def _ensure_schema(conn):
@@ -42,6 +49,7 @@ def _ensure_schema(conn):
 
 
 def ingest_folder(root_path: Path, source: str):
+    start_time = time.time()
     conn = psycopg2.connect(
         host="postgres",
         dbname="docka",
@@ -80,8 +88,23 @@ def ingest_folder(root_path: Path, source: str):
             summary["ingested"] += 1
 
         except Exception as e:
-            print(f"[ERROR] {path}: {e}")
+            #print(f"[ERROR] {path}: {e}")  ---old
+            logger.error(json.dumps({
+                "event": "ingestion_failed",
+                "path": str(path),
+                "error": str(e)
+            }))
             summary["failed"] += 1
 
     conn.close()
+
+    duration = round(time.time() - start_time, 2)
+
+    logger.info(json.dumps({
+        "event": "ingestion_summary",
+        "source": source,
+        "summary": summary,
+        "duration_seconds": duration
+    }))
+    
     return summary
