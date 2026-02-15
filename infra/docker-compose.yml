@@ -1,4 +1,4 @@
-#version: "3"
+#version: "3.9"
 
 # ============================================================================
 # DocKA — Docker Compose (Core Platform)
@@ -44,12 +44,6 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg-isready -U docka"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
     environment:
       POSTGRES_DB: docka
@@ -59,29 +53,46 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
     networks:
       - docka_net
-  
+
+
   # --------------------------------------------------------------------------
   # pgAdmin — PostgreSQL Admin UI
+  #
+  # Provides:
+  # - Web-based administration interface
+  # - Query execution
+  # - Schema inspection
+  #
+  # Intended for:
+  # - Development
+  # - Debugging
+  # - Manual data inspection
   # --------------------------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4
     container_name: docka_pgadmin
     ports:
       - "5050:80"
-    
+    restart: always
+
     environment:
       PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
       PGADMIN_DEFAULT_PASSWORD: docka
-    
-    restart: always
 
     depends_on:
       - postgres
 
     networks:
       - docka_net
+
 
   # --------------------------------------------------------------------------
   # Elasticsearch — Keyword Search Engine
@@ -101,12 +112,6 @@ services:
     ports:
       - "9200:9200"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://elasticsearch:9200 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
     environment:
       discovery.type: single-node
@@ -116,11 +121,17 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
     networks:
       - docka_net
 
 
-  # --------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
   # Airflow — Ingestion Orchestrator
   #
   # Orchestrates document ingestion pipelines:
@@ -130,37 +141,126 @@ services:
   # - Store metadata
   # - Index into Elasticsearch
   #
-  # This is a simplified, dual-container Airflow setup suitable for POC but also production ready
+  # Architecture (Airflow 3.x):
+  # - API Server (Web UI + REST API)
+  # - Scheduler
+  # - DAG Processor
+  # - Triggerer
+  #
+  # Executor:
+  # - LocalExecutor (single-node execution for POC)
+  #
+  # This setup follows the official Apache Airflow 3
+  # Docker architecture pattern.
   # --------------------------------------------------------------------------
 
+
   # --------------------------------------------------------------------------
-  # Airflow Webserver — UI
+  # Airflow Init — Metadata DB Migration & Admin Creation
   #
-  # Provides:
-  # - Airflow UI (DAGs, logs, manual triggers)
+  # Responsible for:
+  # - Running metadata database migrations
+  # - Creating initial admin user
   #
-  # Runs as the main foreground process to ensure
-  # port 8080 is properly exposed.
+  # Uses official entrypoint flags:
+  #   _AIRFLOW_DB_MIGRATE
+  #   _AIRFLOW_WWW_USER_CREATE
+  #
+  # Runs once and must complete successfully
+  # before other Airflow services start.
   # --------------------------------------------------------------------------
-  airflow-webserver:
+  airflow-init:
     build:
       context: ..
       dockerfile: infra/docker/airflow.Dockerfile
-    container_name: docka_airflow_webserver
+    container_name: docka_airflow_init
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
+
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+
+    volumes:
+      # DAGs defining ingestion pipelines
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
+
+      # Optional plugins
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Ingestion domain package
+      - ../Ingestion:/opt/airflow/Ingestion
+
+      # App code (DocKA Core)
+      - ../app:/opt/airflow/app
+
+      # Shared data access (documents)
+      - ../data:/data
+
+      # Shared logs access
+      - airflow_logs:/opt/airflow/logs
+
+
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        exec /entrypoint airflow version
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    user: "0:0"
+
+    networks:
+      - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # Airflow API Server — Web UI & REST API
+  #
+  # Provides:
+  # - Web-based Airflow UI
+  # - REST API
+  #
+  # Exposes:
+  # - Port 8080
+  #
+  # Starts only after airflow-init completes successfully.
+  # --------------------------------------------------------------------------
+  airflow-apiserver:
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
+    container_name: docka_airflow_apiserver
+
+    command: api-server
+
     ports:
-      - "8080:8080"
+      - "8088:8080"
+
     restart: unless-stopped
 
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
-      AIRFLOW__WEBSERVER__SECRET_KEY: "qYk6W6x9X7pZb5uC8c3K8cZq9lQ0mV0nN4hX1X8ZxQ="
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      AIRFLOW_WEBSERVER_DEFAULT_UI_LANGUAGE: en
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
 
     volumes:
       # DAGs defining ingestion pipelines
@@ -182,39 +282,19 @@ services:
       - airflow_logs:/opt/airflow/logs
 
     depends_on:
-      - postgres
-
-    command: >
-      bash -c "
-      echo 'Waiting for Postgress...' &&
-      until pg_isready -h postgres -U docka; do sleep 2; done &&
-
-      echo 'Initializing Airflow DB...' &&
-      airflow db init &&
-
-      echo 'Creating admin user (if not exist)...' &&
-      airflow users create \
-        --username admin \
-        --password admin \
-        --firstname admin \
-        --lastname admin \
-        --role Admin \
-        --email rd.mouhouadi@gmail.com || true &&
-      
-      echo 'Starting Airflow Webserver...' &&
-      exec airflow webserver
-      "
+      airflow-init:
+        condition: service_completed_successfully
 
     networks:
       - docka_net
 
 
   # --------------------------------------------------------------------------
-  # Airflow Scheduler — DAG execution engine
+  # Airflow Scheduler — DAG Scheduling Engine
   #
   # Responsible for:
   # - Scheduling DAG runs
-  # - Executing ingestion tasks
+  # - Managing task state transitions
   #
   # No ports exposed.
   # --------------------------------------------------------------------------
@@ -223,38 +303,103 @@ services:
       context: ..
       dockerfile: infra/docker/airflow.Dockerfile
     container_name: docka_airflow_scheduler
+
+    command: scheduler
+
     restart: unless-stopped
 
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: "ZmFrZV9mZXJuZXRfa2V5XzMyX2J5dGVzIQ=="
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
-      AIRFLOW__WEBSERVER__SECRET_KEY: "qYk6W6x9X7pZb5uC8c3K8cZq9lQ0mV0nN4hX1X8ZxQ="
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
 
     volumes:
+      # DAGs defining ingestion pipelines
       - ../Ingestion/airflow/dags:/opt/airflow/dags
+
+      # Optional plugins
       - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Ingestion domain package
       - ../Ingestion:/opt/airflow/Ingestion
+
+      # App code (DocKA Core)
       - ../app:/opt/airflow/app
+
+      # Shared data access (documents)
       - ../data:/data
+
+      # Shared logs access
       - airflow_logs:/opt/airflow/logs
 
-    depends_on:
-      - postgres
-      - airflow-webserver
 
-    command: >
-      bash -c "
-      exec airflow scheduler
-      "
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
 
     networks:
       - docka_net
+
+
+  # --------------------------------------------------------------------------
+  # Airflow DAG Processor — DAG Parsing Service
+  #
+  # Responsible for:
+  # - Parsing DAG files
+  # - Updating DAG metadata
+  #
+  # Required in Airflow 3 architecture.
+  # --------------------------------------------------------------------------
+  airflow-dag-processor:
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
+    container_name: docka_airflow_dag_processor
+
+    command: dag-processor
+
+    restart: unless-stopped
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
+      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
+
+    volumes:
+      # DAGs defining ingestion pipelines
+      - ../Ingestion/airflow/dags:/opt/airflow/dags
+
+      # Optional plugins
+      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+
+      # Ingestion domain package
+      - ../Ingestion:/opt/airflow/Ingestion
+
+      # App code (DocKA Core)
+      - ../app:/opt/airflow/app
+
+      # Shared data access (documents)
+      - ../data:/data
+
+      # Shared logs access
+      - airflow_logs:/opt/airflow/logs
+
+
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+    networks:
+      - docka_net
+
 
   # --------------------------------------------------------------------------
   # FastAPI — Retrieval API
@@ -274,17 +419,10 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/api.Dockerfile
-
     container_name: docka_api
     ports:
       - "8000:8000"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
     environment:
       POSTGRES_HOST: postgres
@@ -318,10 +456,8 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/ui.Dockerfile
-
     container_name: docka_ui
     ports:
-      # Streamlit UI
       - "8501:8501"
     restart: unless-stopped
 

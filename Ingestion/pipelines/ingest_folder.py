@@ -8,10 +8,9 @@ import logging
 import json
 import time
 
-start_time = time.time()
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 
 
 def _ensure_schema(conn):
@@ -50,6 +49,7 @@ def _ensure_schema(conn):
 
 
 def ingest_folder(root_path: Path, source: str):
+    start_time = time.time()
     conn = psycopg2.connect(
         host="postgres",
         dbname="docka",
@@ -106,4 +106,5 @@ def ingest_folder(root_path: Path, source: str):
         "summary": summary,
         "duration_seconds": duration
     }))
+    
     return summary
