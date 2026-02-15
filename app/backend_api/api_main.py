@@ -1,5 +1,7 @@
 
 from fastapi import FastAPI
+import psycopg2
+import requests
 
 app = FastAPI(
     title="DocKA API",
@@ -9,7 +11,36 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    status = {
+        "api": "ok",
+        "postgres": "unknown",
+        "elasticsearch": "unknown"
+    }
+
+    # Check Postgres
+    try:
+        conn = psycopg2.connect(
+            host="postgres",
+            dbname="docka",
+            user="docka",
+            password="docka"
+        )
+        conn.close()
+        status["postgres"] = "ok"
+
+    except Exception:
+        status["postgres"]= "down"
+
+    # Check Elasticksearch
+    try:
+        req = requests.get("http://elasticsearch:9200")
+        if req.status_code == 200:
+            status["elasticsearch"] = "ok"
+
+    except Exception:
+        status["elasticsearch"] = "down"
+
+    return status
 
 @app.get("/")
 def root():
