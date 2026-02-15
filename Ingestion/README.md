@@ -315,7 +315,7 @@ Its only role is to:
 | M1 | Core logic (filesystem → DB) | ✅ |
 | M2 | Format extractors | ✅ |
 | M3 | Reusable pipelines | ✅|
-| M4 | Airflow scheduling | ⏳ |
+| M4 | Airflow scheduling | ✅ |
 
 ---
 

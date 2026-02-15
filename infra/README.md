@@ -237,7 +237,7 @@ Rules:
 
 ---
 
-### M2 — Ingestion Runtime Support ⏳
+### M2 — Ingestion Runtime Support ✅
 
 **Scope**
 - Airflow container
