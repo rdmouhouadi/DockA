@@ -5,6 +5,42 @@ from Ingestion.core.repository import document_exists, insert_document
 import psycopg2
 import uuid
 
+
+def _ensure_schema(conn):
+    """Ensure required database tables exist."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id SERIAL PRIMARY KEY,
+                    doc_id TEXT UNIQUE,
+                    source TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    title TEXT,
+                    language TEXT,
+                    checksum TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Optional but recommended indexes
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_documents_checksum
+                ON documents(checksum);
+            """)
+
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_documents_doc_id
+                ON documents(doc_id);
+            """)
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        raise RuntimeError(f"Schema initialization failed: {e}")
+
+
 def ingest_folder(root_path: Path, source: str):
     conn = psycopg2.connect(
         host="postgres",
@@ -12,6 +48,9 @@ def ingest_folder(root_path: Path, source: str):
         user="docka",
         password="docka"
     )
+
+    # ✅ Ensure schema before ingestion
+    _ensure_schema(conn)
 
     summary = {"ingested": 0, "skipped": 0, "failed": 0}
 
