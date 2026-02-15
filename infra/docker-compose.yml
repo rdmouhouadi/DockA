@@ -186,14 +186,22 @@ services:
 
     command: >
       bash -c "
-      airflow db migrate &&
-      airflow users create
-        --username admin
-        --password admin
-        --firstname admin
-        --lastname admin
-        --role Admin
+      echo 'Waiting for Postgress...' &&
+      until pg_isready -h postgres -U docka; do sleep 2; done &&
+
+      echo 'Initializing Airflow DB...' &&
+      airflow db init &&
+
+      echo 'Creating admin user (if not exist)...' &&
+      airflow users create \
+        --username admin \
+        --password admin \
+        --firstname admin \
+        --lastname admin \
+        --role Admin \
         --email rd.mouhouadi@gmail.com || true &&
+      
+      echo 'Starting Airflow Webserver...' &&
       exec airflow webserver
       "
 
