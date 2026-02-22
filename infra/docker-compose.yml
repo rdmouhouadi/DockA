@@ -178,10 +178,14 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
+      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
       PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
 
       _AIRFLOW_DB_MIGRATE: 'true'
@@ -253,10 +257,15 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
+      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
+      AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: "false"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
       AIRFLOW_WEBSERVER_DEFAULT_UI_LANGUAGE: en
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
@@ -281,6 +290,12 @@ services:
       # Shared logs access
       - airflow_logs:/opt/airflow/logs
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v2/monitor/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -311,10 +326,17 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
+      AIRFLOW__API__BASE_URL: "http://airflow-apiserver:8080"
+      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
+      AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT: "600"
+      AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: "false"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
       PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
 
     volumes:
@@ -340,6 +362,9 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      
+      airflow-apiserver:
+        condition: service_healthy
 
     networks:
       - docka_net
@@ -367,10 +392,14 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "REPLACE_WITH_FERNET_KEY"
+      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
+      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
+      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
       PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
 
     volumes:
@@ -396,6 +425,9 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      
+      airflow-apiserver:
+        condition: service_healthy
 
     networks:
       - docka_net
