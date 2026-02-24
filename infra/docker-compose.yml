@@ -211,7 +211,7 @@ services:
     restart: always
 
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@docka.local
+      PGADMIN_DEFAULT_EMAIL: docka@richie.com
       PGADMIN_DEFAULT_PASSWORD: docka
 
     depends_on:
