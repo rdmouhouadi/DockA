@@ -1,4 +1,4 @@
-
+import os
 from fastapi import FastAPI
 import psycopg2
 import requests
@@ -20,18 +20,18 @@ def health():
     # Check Postgres
     try:
         conn = psycopg2.connect(
-            host="postgres",
-            dbname="docka",
-            user="docka",
-            password="docka"
+            host=os.getenv("POSTGRES_HOST", "postgres"),
+            dbname=os.getenv("POSTGRES_DB", "docka_app"),
+            user=os.getenv("POSTGRES_USER", "docka"),
+            password=os.getenv("POSTGRES_PASSWORD", "docka")
         )
         conn.close()
         status["postgres"] = "ok"
 
     except Exception:
-        status["postgres"]= "down"
+        status["postgres"] = "down"
 
-    # Check Elasticksearch
+    # Check Elasticsearch
     try:
         req = requests.get("http://elasticsearch:9200")
         if req.status_code == 200:

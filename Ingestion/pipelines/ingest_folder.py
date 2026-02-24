@@ -52,7 +52,7 @@ def ingest_folder(root_path: Path, source: str):
     start_time = time.time()
     conn = psycopg2.connect(
         host="postgres",
-        dbname="docka",
+        dbname="docka_app",
         user="docka",
         password="docka"
     )
