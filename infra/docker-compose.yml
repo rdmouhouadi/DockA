@@ -3,12 +3,19 @@
 # ============================================================================
 # DocKA — Docker Compose (Core Platform)
 #
-# This compose file deploys the DocKA Core architecture:
-# - Metadata store (PostgreSQL)
+# This compose file deploys the full DocKA Core architecture:
+# - Metadata store (PostgreSQL — two databases: docka_app + docka_airflow)
 # - Search engine (Elasticsearch)
-# - Ingestion orchestrator (Airflow)
+# - Ingestion orchestrator (Airflow 2.10 — CeleryExecutor + Redis)
 # - Retrieval API (FastAPI)
 # - User Interface (Streamlit)
+#
+# Airflow Architecture (CeleryExecutor pattern):
+# - airflow-webserver : Web UI
+# - airflow-scheduler : DAG scheduling + task queue submission
+# - airflow-worker    : Celery task executor (runs actual DAG tasks)
+# - airflow-triggerer : Deferred/async task handler
+# - redis             : Celery message broker
 #
 # Scope:
 # - Local development
@@ -21,22 +28,147 @@
 # - Cloud-managed services
 # ============================================================================
 
+
+# ----------------------------------------------------------------------------
+# Airflow Common — Shared Configuration Block
+#
+# NOT a service. A YAML anchor reused by all Airflow services to avoid
+# duplication and ensure consistency across all components.
+#
+# Based on the official Apache Airflow 2.10 Docker Compose pattern.
+#
+# DocKA-specific overrides:
+# - Custom Dockerfile (airflow.Dockerfile) extending apache/airflow:2.10.4
+# - docka_airflow database instead of the default 'airflow' database
+# - DocKA volume mounts (DAGs, Ingestion package, app, data)
+# - All services on docka_net for cross-service DNS resolution
+# - Performance tuning for laptop/local Docker environments
+#
+# Environment variable naming convention:
+#   AIRFLOW__{SECTION}__{KEY}
+#
+# Key decisions:
+# - CeleryExecutor: tasks distributed via Redis, executed by worker containers
+# - Airflow 2.10: stable, well-tested, no JWT auth issues between components
+# - FERNET_KEY: empty = Airflow auto-generates one at startup (fine for POC)
+# ----------------------------------------------------------------------------
+x-airflow-common:
+  &airflow-common
+
+  build:
+    context: ..
+    dockerfile: infra/docker/airflow.Dockerfile
+
+  env_file:
+    - .env
+
+  environment:
+    &airflow-common-env
+
+    # ---- Core ---------------------------------------------------------------
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+    # ---- Database -----------------------------------------------------------
+    # Isolated from docka_app to prevent schema conflicts
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/docka_airflow
+
+    # ---- Celery -------------------------------------------------------------
+    # Result backend: task results stored in Airflow's own DB
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/docka_airflow
+
+    # Broker: Redis queue for distributing tasks from scheduler to workers
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+
+    # ---- Security -----------------------------------------------------------
+    # FERNET_KEY: encrypts connection passwords in the DB
+    # Empty = Airflow auto-generates one at startup (fine for POC)
+    # For production: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    AIRFLOW__CORE__FERNET_KEY: ""
+
+    # ---- Webserver ----------------------------------------------------------
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-docka_secret_key_change_in_prod}
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+
+    # ---- Scheduler health check ---------------------------------------------
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+
+    # ---- Logging ------------------------------------------------------------
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
+
+    # ---- Performance tuning — Laptop Safe Profile ---------------------------
+    # Max concurrent task instances across all DAGs
+    AIRFLOW__CORE__PARALLELISM: "6"
+
+    # Max concurrent tasks per DAG
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "3"
+
+    # Max concurrent DAG runs per DAG (1 = no backlog buildup)
+    AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: "1"
+
+    # Scheduler heartbeat interval in seconds
+    AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: "10"
+
+    # ---- Python path --------------------------------------------------------
+    # Makes DocKA packages importable inside DAG task code
+    PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
+
+    # ---- Additional pip requirements ----------------------------------------
+    # Use ONLY for quick checks — prefer building into airflow.Dockerfile
+    _PIP_ADDITIONAL_REQUIREMENTS: ""
+
+  volumes:
+    # DAG files — ingestion pipeline definitions
+    - ../Ingestion/airflow/dags:/opt/airflow/dags
+
+    # Optional Airflow plugins
+    - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+
+    # Ingestion domain package (importable as `Ingestion.*` in DAG code)
+    - ../Ingestion:/opt/airflow/Ingestion
+
+    # App code — DocKA Core (importable as `app.*` in DAG code)
+    - ../app:/opt/airflow/app
+
+    # Raw documents for ingestion pipelines
+    - ../data:/data
+
+    # Shared log volume — mounted on ALL Airflow services so the
+    # webserver can serve logs written by workers via the UI
+    - airflow_logs:/opt/airflow/logs
+
+  user: "${AIRFLOW_UID:-50000}:0"
+
+  networks:
+    - docka_net
+
+  depends_on:
+    &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+
 services:
 
   # --------------------------------------------------------------------------
-  # PostgreSQL — Metadata Store
+  # PostgreSQL — Single Instance, Two Databases
   #
-  # Stores authoritative document metadata:
-  # - document_id
-  # - source_path
-  # - title
-  # - language
-  # - checksum
-  # - ingestion timestamps
+  # docka_app     : DocKA application metadata
+  #                 - document_id, source_path, title, language, checksum
+  #                 - Managed by FastAPI and ingestion pipelines
   #
-  # IMPORTANT:
-  # - This DB does NOT store full document text for retrieval
-  # - Elasticsearch is considered a disposable index
+  # docka_airflow : Airflow internal metadata
+  #                 - DAG definitions, task instances, job history
+  #                 - Managed exclusively by Airflow components
+  #
+  # Init scripts run ONCE on a fresh volume:
+  # - 01_init.sql: creates databases, grants, and documents table
+  #
+  # To re-run init scripts: docker compose down -v
   # --------------------------------------------------------------------------
   postgres:
     image: postgres:15
@@ -46,18 +178,20 @@ services:
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: docka
-      POSTGRES_USER: docka
-      POSTGRES_PASSWORD: docka
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/01_init.sql:/docker-entrypoint-initdb.d/01_init.sql
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docka"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-docka}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
     networks:
       - docka_net
@@ -66,15 +200,8 @@ services:
   # --------------------------------------------------------------------------
   # pgAdmin — PostgreSQL Admin UI
   #
-  # Provides:
-  # - Web-based administration interface
-  # - Query execution
-  # - Schema inspection
-  #
-  # Intended for:
-  # - Development
-  # - Debugging
-  # - Manual data inspection
+  # Access: http://localhost:5050
+  # Login: admin@docka.local / docka
   # --------------------------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4
@@ -84,7 +211,7 @@ services:
     restart: always
 
     environment:
-      PGADMIN_DEFAULT_EMAIL: rd.mouhouadi@gmail.com
+      PGADMIN_DEFAULT_EMAIL: admin@docka.local
       PGADMIN_DEFAULT_PASSWORD: docka
 
     depends_on:
@@ -95,16 +222,15 @@ services:
 
 
   # --------------------------------------------------------------------------
-  # Elasticsearch — Keyword Search Engine
+  # Elasticsearch — Full-Text Search Engine
   #
   # Provides:
-  # - Full-text indexing
+  # - Full-text indexing of document content
   # - BM25 ranking
   # - Language-specific analyzers (EN / FR)
   #
-  # Notes:
-  # - Single-node setup for POC
-  # - Indexes are rebuildable from ingestion pipelines
+  # Single-node POC setup. Index is disposable — rebuildable from pipelines.
+  # Memory reduced to 512m to leave headroom for Celery workers.
   # --------------------------------------------------------------------------
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
@@ -116,7 +242,7 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
 
     volumes:
       - es_data:/usr/share/elasticsearch/data
@@ -131,321 +257,208 @@ services:
       - docka_net
 
 
-    # --------------------------------------------------------------------------
-  # Airflow — Ingestion Orchestrator
-  #
-  # Orchestrates document ingestion pipelines:
-  # - Watch folders / sources
-  # - Extract text
-  # - Clean & normalize
-  # - Store metadata
-  # - Index into Elasticsearch
-  #
-  # Architecture (Airflow 3.x):
-  # - API Server (Web UI + REST API)
-  # - Scheduler
-  # - DAG Processor
-  # - Triggerer
-  #
-  # Executor:
-  # - LocalExecutor (single-node execution for POC)
-  #
-  # This setup follows the official Apache Airflow 3
-  # Docker architecture pattern.
   # --------------------------------------------------------------------------
-
-
+  # Redis — Celery Message Broker
+  #
+  # Airflow CeleryExecutor task queue:
+  # - Scheduler pushes task requests into Redis
+  # - Workers pull and execute tasks from Redis
+  # - No persistence needed — queue is ephemeral
+  #
+  # Locked to 7.2-bookworm due to Redis licensing change in 7.4+
   # --------------------------------------------------------------------------
-  # Airflow Init — Metadata DB Migration & Admin Creation
-  #
-  # Responsible for:
-  # - Running metadata database migrations
-  # - Creating initial admin user
-  #
-  # Uses official entrypoint flags:
-  #   _AIRFLOW_DB_MIGRATE
-  #   _AIRFLOW_WWW_USER_CREATE
-  #
-  # Runs once and must complete successfully
-  # before other Airflow services start.
-  # --------------------------------------------------------------------------
-  airflow-init:
-    build:
-      context: ..
-      dockerfile: infra/docker/airflow.Dockerfile
-    container_name: docka_airflow_init
+  redis:
+    image: redis:7.2-bookworm
+    container_name: docka_redis
+    expose:
+      - 6379
+    restart: unless-stopped
 
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
-      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
-      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
-
-      _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
-
-    volumes:
-      # DAGs defining ingestion pipelines
-      - ../Ingestion/airflow/dags:/opt/airflow/dags
-
-      # Optional plugins
-      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
-
-      # Ingestion domain package
-      - ../Ingestion:/opt/airflow/Ingestion
-
-      # App code (DocKA Core)
-      - ../app:/opt/airflow/app
-
-      # Shared data access (documents)
-      - ../data:/data
-
-      # Shared logs access
-      - airflow_logs:/opt/airflow/logs
-
-
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        exec /entrypoint airflow version
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-    user: "0:0"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
 
     networks:
       - docka_net
 
 
   # --------------------------------------------------------------------------
-  # Airflow API Server — Web UI & REST API
+  # Airflow Init — DB Migration & Admin User Creation
   #
-  # Provides:
-  # - Web-based Airflow UI
-  # - REST API
+  # Runs ONCE at startup then exits (service_completed_successfully).
+  # All other Airflow services wait for this before starting.
   #
-  # Exposes:
-  # - Port 8080
-  #
-  # Starts only after airflow-init completes successfully.
+  # Responsibilities:
+  # - Creates Airflow metadata tables in docka_airflow (db migrate)
+  # - Creates the initial admin user
+  # - Creates required directories with correct ownership
   # --------------------------------------------------------------------------
-  airflow-apiserver:
-    build:
-      context: ..
-      dockerfile: infra/docker/airflow.Dockerfile
-    container_name: docka_airflow_apiserver
+  airflow-init:
+    <<: *airflow-common
+    container_name: docka_airflow_init
 
-    command: api-server
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/{logs,dags,plugins}
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins}
+        exec /entrypoint airflow version
+
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-admin}
+      _PIP_ADDITIONAL_REQUIREMENTS: ""
+
+    user: "0:0"
+
+
+  # --------------------------------------------------------------------------
+  # Airflow Webserver — Web UI
+  #
+  # Provides the Airflow web interface:
+  # - DAG list and graph views
+  # - Task instance logs
+  # - Manual trigger, pause, clear
+  # - Admin and connections management
+  #
+  # Access: http://localhost:8088
+  # Login: admin / admin (set via .env)
+  # --------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: docka_airflow_webserver
+
+    command: webserver
 
     ports:
       - "8088:8080"
 
     restart: unless-stopped
 
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
-      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
-      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
-      AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: "false"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      AIRFLOW_WEBSERVER_DEFAULT_UI_LANGUAGE: en
-      LANG: en_US.UTF-8
-      LC_ALL: en_US.UTF-8
-      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
-
-    volumes:
-      # DAGs defining ingestion pipelines
-      - ../Ingestion/airflow/dags:/opt/airflow/dags
-
-      # Optional plugins
-      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
-
-      # Ingestion domain package
-      - ../Ingestion:/opt/airflow/Ingestion
-
-      # App code (DocKA Core)
-      - ../app:/opt/airflow/app
-
-      # Shared data access (documents)
-      - ../data:/data
-
-      # Shared logs access
-      - airflow_logs:/opt/airflow/logs
-
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v2/monitor/health || exit 1"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
       retries: 5
-    
+      start_period: 30s
+
     depends_on:
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-
-    networks:
-      - docka_net
 
 
   # --------------------------------------------------------------------------
   # Airflow Scheduler — DAG Scheduling Engine
   #
   # Responsible for:
-  # - Scheduling DAG runs
-  # - Managing task state transitions
-  #
-  # No ports exposed.
+  # - Evaluating DAG schedules and creating DAG runs
+  # - Parsing DAG files (built-in to scheduler in Airflow 2.x)
+  # - Submitting ready tasks to the Redis queue
+  # - Managing task state transitions and timeouts
   # --------------------------------------------------------------------------
   airflow-scheduler:
-    build:
-      context: ..
-      dockerfile: infra/docker/airflow.Dockerfile
+    <<: *airflow-common
     container_name: docka_airflow_scheduler
 
     command: scheduler
 
     restart: unless-stopped
 
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
-      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
-      AIRFLOW__API__BASE_URL: "http://airflow-apiserver:8080"
-      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
-      AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT: "600"
-      AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: "false"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
-
-    volumes:
-      # DAGs defining ingestion pipelines
-      - ../Ingestion/airflow/dags:/opt/airflow/dags
-
-      # Optional plugins
-      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
-
-      # Ingestion domain package
-      - ../Ingestion:/opt/airflow/Ingestion
-
-      # App code (DocKA Core)
-      - ../app:/opt/airflow/app
-
-      # Shared data access (documents)
-      - ../data:/data
-
-      # Shared logs access
-      - airflow_logs:/opt/airflow/logs
-
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
     depends_on:
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-      
-      airflow-apiserver:
-        condition: service_healthy
-
-    networks:
-      - docka_net
 
 
   # --------------------------------------------------------------------------
-  # Airflow DAG Processor — DAG Parsing Service
+  # Airflow Worker — Celery Task Executor
   #
   # Responsible for:
-  # - Parsing DAG files
-  # - Updating DAG metadata
+  # - Pulling task execution requests from the Redis queue
+  # - Running the actual DAG task Python callables
+  # - This is where your ingestion code actually executes
   #
-  # Required in Airflow 3 architecture.
+  # DUMB_INIT_SETSID=0: required for clean warm shutdown of Celery workers.
   # --------------------------------------------------------------------------
-  airflow-dag-processor:
-    build:
-      context: ..
-      dockerfile: infra/docker/airflow.Dockerfile
-    container_name: docka_airflow_dag_processor
+  airflow-worker:
+    <<: *airflow-common
+    container_name: docka_airflow_worker
 
-    command: dag-processor
+    command: celery worker
 
     restart: unless-stopped
 
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://docka:docka@postgres:5432/docka
-      AIRFLOW__CORE__FERNET_KEY: "Q7yKp0v1lTz3mXb4Y8dP9qR2sW6uV1nO3cL5eF7gH8="
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      #AIRFLOW__WEBSERVER__SECRET_KEY: "ePOgwKVYwIalRPsnUwW5ElId__31uF6J1yMq2oovRQM"
-      AIRFLOW__API__SECRET_KEY: "9f4b8e6d3a1c7f2056d9e1b43a8c2f7e4c6a9d1e3f5b7c8a2d4e6f1a3b5c7d9a8f3c1e5d7b9a2c4e6f8d1b3c5a7e9f2d4c6b8a1e3f5d7c9b2a4e6f8d1c3b5"
-      AIRFLOW__CORE__INTERNAL_API_URL: "http://airflow-apiserver:8080"
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
-      PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
 
-    volumes:
-      # DAGs defining ingestion pipelines
-      - ../Ingestion/airflow/dags:/opt/airflow/dags
-
-      # Optional plugins
-      - ../Ingestion/airflow/plugins:/opt/airflow/plugins
-
-      # Ingestion domain package
-      - ../Ingestion:/opt/airflow/Ingestion
-
-      # App code (DocKA Core)
-      - ../app:/opt/airflow/app
-
-      # Shared data access (documents)
-      - ../data:/data
-
-      # Shared logs access
-      - airflow_logs:/opt/airflow/logs
-
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
     depends_on:
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-      
-      airflow-apiserver:
-        condition: service_healthy
 
-    networks:
-      - docka_net
+
+  # --------------------------------------------------------------------------
+  # Airflow Triggerer — Deferred Task Handler
+  #
+  # Handles deferred/async tasks using asyncio.
+  # Not required for basic PythonOperator pipelines but included for
+  # forward compatibility with sensors and async operators.
+  # --------------------------------------------------------------------------
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: docka_airflow_triggerer
+
+    command: triggerer
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
 
 
   # --------------------------------------------------------------------------
   # FastAPI — Retrieval API
   #
-  # Acts as the single entry point for retrieval logic:
-  # - /search (BM25)
-  # - future: /ask, /chat, /feedback
+  # Single entry point for all DocKA retrieval operations:
+  # - GET /search  : BM25 full-text search via Elasticsearch
+  # - GET /health  : Service health check
+  # - future       : /ask, /chat, /feedback
   #
-  # This service:
-  # - Talks to Elasticsearch for search
-  # - Talks to PostgreSQL for metadata
-  #
-  # IMPORTANT:
-  # - No domain-specific logic lives here
+  # Connects to Elasticsearch (search) and PostgreSQL docka_app (metadata).
   # --------------------------------------------------------------------------
   api:
     build:
@@ -458,14 +471,16 @@ services:
 
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_DB: docka
-      POSTGRES_USER: docka
-      POSTGRES_PASSWORD: docka
+      POSTGRES_DB: docka_app
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       ELASTICSEARCH_HOST: http://elasticsearch:9200
 
     depends_on:
-      - postgres
-      - elasticsearch
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
 
     networks:
       - docka_net
@@ -474,15 +489,8 @@ services:
   # --------------------------------------------------------------------------
   # Streamlit — User Interface
   #
-  # Provides a lightweight UI for:
-  # - Submitting queries
-  # - Viewing ranked results
-  # - Inspecting snippets
-  #
-  # Intended for:
-  # - Demos
-  # - Debugging
-  # - Internal users
+  # Lightweight frontend for submitting queries and viewing results.
+  # Access: http://localhost:8501
   # --------------------------------------------------------------------------
   ui:
     build:
@@ -507,7 +515,7 @@ services:
 # Volumes
 #
 # Persistent storage for stateful services.
-# Safe to delete during development if a full reset is needed.
+# To fully reset all data: docker compose down -v
 # ---------------------------------------------------------------------------
 volumes:
   postgres_data:
@@ -519,6 +527,7 @@ volumes:
 # Networks
 #
 # Single private bridge network for all DocKA services.
+# All containers reach each other by service name (internal DNS).
 # ---------------------------------------------------------------------------
 networks:
   docka_net:
