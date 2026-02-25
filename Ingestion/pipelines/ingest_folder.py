@@ -1,66 +1,57 @@
-from pathlib import Path
-from Ingestion.core.loader import load_file
-from Ingestion.core.checksum import file_checksum
-from Ingestion.core.repository import document_exists, insert_document
-import psycopg2
+import os
 import uuid
 import logging
 import json
 import time
+from pathlib import Path
 
+import psycopg2
+
+from Ingestion.core.loader import load_file
+from Ingestion.core.checksum import file_checksum
+from Ingestion.core.es_repository import get_client, ensure_index
+from Ingestion.pipelines.ingest_postgres import ingest_document_postgres
+from Ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
 logger = logging.getLogger(__name__)
-#logging.basicConfig(level=logging.INFO)
 
 
-def _ensure_schema(conn):
-    """Ensure required database tables exist."""
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id SERIAL PRIMARY KEY,
-                    doc_id TEXT UNIQUE,
-                    source TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    title TEXT,
-                    language TEXT,
-                    checksum TEXT UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-
-            # Optional but recommended indexes
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_documents_checksum
-                ON documents(checksum);
-            """)
-
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_documents_doc_id
-                ON documents(doc_id);
-            """)
-
-        conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-        raise RuntimeError(f"Schema initialization failed: {e}")
-
-
-def ingest_folder(root_path: Path, source: str):
-    start_time = time.time()
-    conn = psycopg2.connect(
-        host="postgres",
-        dbname="docka_app",
-        user="docka",
-        password="docka"
+def _get_pg_conn():
+    return psycopg2.connect(
+        host=os.getenv("POSTGRES_HOST", "postgres"),
+        dbname=os.getenv("POSTGRES_DB", "docka_app"),
+        user=os.getenv("POSTGRES_USER", "docka"),
+        password=os.getenv("POSTGRES_PASSWORD", "docka")
     )
 
-    # ✅ Ensure schema before ingestion
-    _ensure_schema(conn)
 
-    summary = {"ingested": 0, "skipped": 0, "failed": 0}
+def ingest_folder(root_path: Path, source: str) -> dict:
+    """
+    Ingest all supported documents from a folder.
+
+    For each document:
+    1. Compute checksum
+    2. Extract text content
+    3. Persist metadata to PostgreSQL
+    4. Index content to Elasticsearch
+
+    Both stores are updated idempotently — safe to re-run.
+    PostgreSQL is the source of truth for metadata.
+    Elasticsearch is the search index.
+    """
+    start_time = time.time()
+
+    # --- Connections ---------------------------------------------------------
+    conn = _get_pg_conn()
+    es_client = get_client()
+    ensure_index(es_client)
+
+    # --- Ingestion loop ------------------------------------------------------
+    summary = {
+        "ingested": 0,
+        "skipped": 0,
+        "failed": 0
+    }
 
     for path in root_path.rglob("*"):
         if not path.is_file():
@@ -68,12 +59,7 @@ def ingest_folder(root_path: Path, source: str):
 
         try:
             checksum = file_checksum(str(path))
-
-            if document_exists(conn, checksum):
-                summary["skipped"] += 1
-                continue
-
-            text = load_file(path)
+            content = load_file(path)
 
             doc = {
                 "doc_id": str(uuid.uuid4()),
@@ -81,14 +67,19 @@ def ingest_folder(root_path: Path, source: str):
                 "path": str(path),
                 "title": path.stem,
                 "language": None,
+                "content": content,
                 "checksum": checksum,
             }
 
-            insert_document(conn, doc)
-            summary["ingested"] += 1
+            pg_inserted = ingest_document_postgres(conn, doc)
+            es_indexed = ingest_document_elasticsearch(es_client, doc)
+
+            if pg_inserted or es_indexed:
+                summary["ingested"] += 1
+            else:
+                summary["skipped"] += 1
 
         except Exception as e:
-            #print(f"[ERROR] {path}: {e}")  ---old
             logger.error(json.dumps({
                 "event": "ingestion_failed",
                 "path": str(path),
@@ -96,6 +87,7 @@ def ingest_folder(root_path: Path, source: str):
             }))
             summary["failed"] += 1
 
+    # --- Cleanup -------------------------------------------------------------
     conn.close()
 
     duration = round(time.time() - start_time, 2)
@@ -106,5 +98,5 @@ def ingest_folder(root_path: Path, source: str):
         "summary": summary,
         "duration_seconds": duration
     }))
-    
+
     return summary

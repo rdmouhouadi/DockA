@@ -12,7 +12,7 @@ def get_client() -> Elasticsearch:
     return Elasticsearch(ES_HOST)
 
 
-def ensure_index(client: Elasticsearch, mapping_path: str = None):
+def ensure_index(client: Elasticsearch, mapping_path: str | None = None):
     """
     Create the index with mapping if it does not exist.
     Idempotent — safe to call on every pipeline run.
