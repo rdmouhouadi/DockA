@@ -2,7 +2,7 @@
 fastapi
 uvicorn
 psycopg2-binary
-elasticsearch
+elasticsearch==8.12.0
 pypdf
 
 # --- UI ---
