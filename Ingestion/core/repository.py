@@ -15,7 +15,7 @@ def insert_document(conn, doc):
             """
             INSERT INTO documents (doc_id, source, path, title, language, checksum)
             VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (doc_id) DO NOTHING
+            ON CONFLICT (checksum) DO NOTHING
             """,
             (
                 doc["doc_id"],
