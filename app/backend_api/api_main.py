@@ -3,11 +3,17 @@ from fastapi import FastAPI
 import psycopg2
 import requests
 
+from app.backend_api.routers.search import router as search_router
+
 app = FastAPI(
     title="DocKA API",
     description="Document Knowledge Access API",
     version="0.1.0",
 )
+
+# Routers
+app.include_router(search_router, tags=["Search"])
+
 
 @app.get("/health")
 def health():
@@ -41,6 +47,7 @@ def health():
         status["elasticsearch"] = "down"
 
     return status
+
 
 @app.get("/")
 def root():
