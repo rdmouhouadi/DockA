@@ -53,9 +53,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ---------------------------------------------------------------------------
 # UI application code
 #
-# Only the UI code is copied here.
+# Only the UI code + Ingestion package (used for direct pipeline calls
+# triggered by user uploads — bypasses Airflow for interactive ingestion)
 # ---------------------------------------------------------------------------
 COPY app/frontend ./app/frontend
+COPY Ingestion ./Ingestion
 
 # ---------------------------------------------------------------------------
 # Expose port
