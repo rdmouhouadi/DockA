@@ -14,6 +14,11 @@ from Ingestion.core.normalizer import normalize_text
 from Ingestion.pipelines.ingest_postgres import ingest_document_postgres
 from Ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
+from langdetect import detect, LangDetectException
+
+from datetime import datetime, timezone
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +30,11 @@ def _get_pg_conn():
         password=os.getenv("POSTGRES_PASSWORD", "docka")
     )
 
+def detect_language(text: str) -> str | None:
+    try:
+        return detect(text)
+    except LangDetectException:
+        return None
 
 def ingest_folder(root_path: Path, source: str) -> dict:
     """
@@ -68,9 +78,10 @@ def ingest_folder(root_path: Path, source: str) -> dict:
                 "source": source,
                 "path": str(path),
                 "title": path.stem,
-                "language": None,
+                "language": detect_language(content),
                 "content": content,
                 "checksum": checksum,
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             pg_inserted = ingest_document_postgres(conn, doc)
