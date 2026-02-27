@@ -71,8 +71,8 @@ if search_clicked and query.strip():
                             # Replace newlines for cleaner display
                             snippet_html = snippet.replace("\n", " ")
                             st.markdown(
-                                f"<div style='background:#f0f2f6;padding:10px;"
-                                f"border-radius:6px;font-size:0.9em'>{snippet_html}</div>",
+                                f"<div style='background:#1e1e2e;padding:10px;"
+                                f"border-radius:6px;font-size:0.9em;color:#e0e0e0'>{snippet_html}</div>",
                                 unsafe_allow_html=True
                             )
 
