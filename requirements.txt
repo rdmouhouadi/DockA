@@ -4,6 +4,7 @@ uvicorn
 psycopg2-binary
 elasticsearch==8.12.0
 pypdf
+langdetect
 
 # --- UI ---
 streamlit

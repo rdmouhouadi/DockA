@@ -2,3 +2,4 @@ pypdf
 psycopg2-binary
 python-dotenv
 elasticsearch==8.12.0
+langdetect
