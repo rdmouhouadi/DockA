@@ -2,9 +2,12 @@
 Unit Tests — DocKA Core Modules
 
 Tests for the pure logic layer of DocKA ingestion:
-- checksum.py   : deterministic file hashing
-- normalizer.py : text cleaning and normalization
-- ingest_folder : language detection
+- checksum.py        : deterministic file hashing
+- normalizer.py      : text cleaning and normalization
+- ingest_folder      : language detection
+- extractors/txt.py  : plain text extraction
+- extractors/docx.py : Word document extraction
+- extractors/html.py : HTML extraction
 
 These tests require no database, no Elasticsearch, no Docker.
 They test pure Python functions in complete isolation.
@@ -13,13 +16,15 @@ Run with:
     pytest tests/test_core.py -v
 """
 
-import os
-import tempfile
 import pytest
+from pathlib import Path
 
 from Ingestion.core.checksum import file_checksum
 from Ingestion.core.normalizer import normalize_text
 from Ingestion.pipelines.ingest_folder import detect_language
+from Ingestion.extractors.txt import TXTExtractor
+from Ingestion.extractors.docx import DOCXExtractor
+from Ingestion.extractors.html import HTMLExtractor
 
 
 # =============================================================================
@@ -72,15 +77,12 @@ class TestFileChecksum:
 
         checksum = file_checksum(str(file))
 
-        # SHA-256 hex digest is always exactly 64 characters
         assert len(checksum) == 64
-        # Must be a valid hex string (only 0-9 and a-f)
         assert all(c in "0123456789abcdef" for c in checksum)
 
     def test_empty_file_has_checksum(self, tmp_path):
         """
         Empty files must still produce a valid checksum.
-        An empty file is a valid document and should not crash ingestion.
         """
         file = tmp_path / "empty.txt"
         file.write_bytes(b"")
@@ -93,7 +95,6 @@ class TestFileChecksum:
     def test_binary_file_checksum(self, tmp_path):
         """
         Binary files (e.g. PDFs) must be handled correctly.
-        The function reads in binary mode so this should work for all formats.
         """
         file = tmp_path / "binary.bin"
         file.write_bytes(bytes(range(256)))
@@ -112,7 +113,6 @@ class TestFileChecksum:
         file.write_text("Original content", encoding="utf-8")
         checksum_before = file_checksum(str(file))
 
-        # Modify the file
         file.write_text("Modified content", encoding="utf-8")
         checksum_after = file_checksum(str(file))
 
@@ -132,24 +132,15 @@ class TestNormalizeText:
     """
 
     def test_empty_string_returns_empty(self):
-        """
-        Empty input must return empty string without crashing.
-        Extractors can return empty strings for image-only PDFs.
-        """
+        """Empty input must return empty string without crashing."""
         assert normalize_text("") == ""
 
     def test_none_returns_empty(self):
-        """
-        None input must return empty string.
-        Defensive check — some extractors may return None.
-        """
-        assert normalize_text(None) == ""
+        """None input must return empty string."""
+        assert normalize_text(None) == ""  # type: ignore
 
     def test_removes_excessive_newlines(self):
-        """
-        Multiple consecutive newlines must be collapsed into a single space.
-        PDF extraction often produces text with many blank lines.
-        """
+        """Multiple consecutive newlines must be collapsed into a single space."""
         text = "Hello\n\n\nWorld"
         result = normalize_text(text)
 
@@ -158,23 +149,15 @@ class TestNormalizeText:
         assert "World" in result
 
     def test_removes_isolated_page_numbers(self):
-        """
-        Lines containing only digits (page numbers) must be removed.
-        Page numbers add noise to search without providing value.
-        """
+        """Lines containing only digits (page numbers) must be removed."""
         text = "Some content\n42\nMore content"
         result = normalize_text(text)
 
-        # The isolated number should be gone
-        # but content should remain
         assert "Some content" in result
         assert "More content" in result
 
     def test_collapses_multiple_spaces(self):
-        """
-        Multiple consecutive spaces must be collapsed into one.
-        PDF extraction frequently introduces irregular spacing.
-        """
+        """Multiple consecutive spaces must be collapsed into one."""
         text = "Hello    World"
         result = normalize_text(text)
 
@@ -182,9 +165,7 @@ class TestNormalizeText:
         assert "Hello World" in result
 
     def test_strips_leading_trailing_whitespace(self):
-        """
-        Leading and trailing whitespace must be removed.
-        """
+        """Leading and trailing whitespace must be removed."""
         text = "   Hello World   "
         result = normalize_text(text)
 
@@ -193,10 +174,7 @@ class TestNormalizeText:
         assert result.endswith("World")
 
     def test_normalizes_unicode(self):
-        """
-        Unicode characters must be preserved and normalized to NFC form.
-        French accented characters (é, è, ê, à, ù) must not be corrupted.
-        """
+        """French accented characters must not be corrupted."""
         text = "Généralités sur la radio-relève"
         result = normalize_text(text)
 
@@ -204,10 +182,7 @@ class TestNormalizeText:
         assert "radio-relève" in result
 
     def test_removes_control_characters(self):
-        """
-        Null bytes and control characters must be removed.
-        These are common artifacts from PDF extraction libraries.
-        """
+        """Null bytes and control characters must be removed."""
         text = "Hello\x00World\x01Test"
         result = normalize_text(text)
 
@@ -217,10 +192,7 @@ class TestNormalizeText:
         assert "World" in result
 
     def test_preserves_meaningful_content(self):
-        """
-        Normalization must not destroy meaningful document content.
-        This is a smoke test — real content must survive the pipeline.
-        """
+        """Normalization must not destroy meaningful document content."""
         text = (
             "Guide radio Birdz\n"
             "Ce guide a pour but de vous assister dans l'utilisation\n"
@@ -232,10 +204,7 @@ class TestNormalizeText:
         assert "radio-relève" in result
 
     def test_tabs_replaced_with_spaces(self):
-        """
-        Tabs must be replaced with spaces.
-        PDF tables and formatted content often use tab characters.
-        """
+        """Tabs must be replaced with spaces."""
         text = "Column1\tColumn2\tColumn3"
         result = normalize_text(text)
 
@@ -255,10 +224,7 @@ class TestDetectLanguage:
     """
 
     def test_detects_french(self):
-        """
-        French text must be detected as 'fr'.
-        All current sample documents are in French.
-        """
+        """French text must be detected as 'fr'."""
         text = (
             "Ce guide a pour but de vous assister dans l'utilisation "
             "de votre dispositif de radio-relève. Il a été rédigé pour "
@@ -267,10 +233,7 @@ class TestDetectLanguage:
         assert detect_language(text) == "fr"
 
     def test_detects_english(self):
-        """
-        English text must be detected as 'en'.
-        Required for the healthcare corpus (PubMed abstracts are in English).
-        """
+        """English text must be detected as 'en'."""
         text = (
             "This guide is intended to assist you in the use of your "
             "radio reading device. It was written for version 2.X of "
@@ -279,24 +242,189 @@ class TestDetectLanguage:
         assert detect_language(text) == "en"
 
     def test_returns_none_for_empty_string(self):
-        """
-        Empty string must return None without raising an exception.
-        Language detection cannot work on empty content.
-        """
+        """Empty string must return None without raising an exception."""
         assert detect_language("") is None
 
     def test_returns_none_for_undetectable_text(self):
-        """
-        Text that cannot be classified must return None gracefully.
-        Examples: pure numbers, single characters, symbols only.
-        """
+        """Text that cannot be classified must return None gracefully."""
         assert detect_language("123 456 789") is None
 
     def test_returns_string_or_none(self):
-        """
-        Return type must always be str or None — never raises an exception.
-        This guarantees the ingestion pipeline never crashes on language detection.
-        """
+        """Return type must always be str or None — never raises an exception."""
         result = detect_language("Bonjour le monde")
 
         assert result is None or isinstance(result, str)
+
+
+# =============================================================================
+# extractors/txt.py
+# =============================================================================
+
+class TestTXTExtractor:
+    """
+    Tests for TXTExtractor.
+
+    TXT is the baseline extractor — if this fails, all others are suspect.
+    """
+
+    def test_extracts_utf8_text(self, tmp_path):
+        """Standard UTF-8 text files must be extracted correctly."""
+        file = tmp_path / "doc.txt"
+        file.write_text("Hello DocKA\nSecond line", encoding="utf-8")
+
+        result = TXTExtractor.extract(file)
+
+        assert "Hello DocKA" in result
+        assert "Second line" in result
+
+    def test_extracts_latin1_text(self, tmp_path):
+        """
+        Files with latin-1 encoding must not crash the extractor.
+        Older French documents often use latin-1 instead of UTF-8.
+        """
+        file = tmp_path / "doc_latin1.txt"
+        file.write_bytes("Généralités\n".encode("latin-1"))
+
+        result = TXTExtractor.extract(file)
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_returns_string(self, tmp_path):
+        """The extractor must always return a string, never None or bytes."""
+        file = tmp_path / "doc.txt"
+        file.write_text("Some content", encoding="utf-8")
+
+        result = TXTExtractor.extract(file)
+
+        assert isinstance(result, str)
+
+    def test_empty_file_returns_empty_string(self, tmp_path):
+        """An empty file must return an empty string without crashing."""
+        file = tmp_path / "empty.txt"
+        file.write_text("", encoding="utf-8")
+
+        result = TXTExtractor.extract(file)
+
+        assert result == ""
+
+
+# =============================================================================
+# extractors/html.py
+# =============================================================================
+
+class TestHTMLExtractor:
+    """
+    Tests for HTMLExtractor.
+
+    HTML extraction must strip tags and return only visible text.
+    """
+
+    def test_strips_html_tags(self, tmp_path):
+        """HTML tags must be removed — only visible text content should remain."""
+        file = tmp_path / "doc.html"
+        file.write_text(
+            "<html><body><h1>Title</h1><p>Some content</p></body></html>",
+            encoding="utf-8"
+        )
+
+        result = HTMLExtractor.extract(file)
+
+        assert "<h1>" not in result
+        assert "<p>" not in result
+        assert "Title" in result
+        assert "Some content" in result
+
+    def test_removes_script_tags(self, tmp_path):
+        """Script tag content must be removed — JavaScript is not searchable text."""
+        file = tmp_path / "doc.html"
+        file.write_text(
+            "<html><body><p>Visible</p>"
+            "<script>var x = 'hidden';</script></body></html>",
+            encoding="utf-8"
+        )
+
+        result = HTMLExtractor.extract(file)
+
+        assert "hidden" not in result
+        assert "Visible" in result
+
+    def test_removes_style_tags(self, tmp_path):
+        """Style tag content must be removed — CSS is not searchable text."""
+        file = tmp_path / "doc.html"
+        file.write_text(
+            "<html><head><style>body { color: red; }</style></head>"
+            "<body><p>Content</p></body></html>",
+            encoding="utf-8"
+        )
+
+        result = HTMLExtractor.extract(file)
+
+        assert "color: red" not in result
+        assert "Content" in result
+
+    def test_returns_string(self, tmp_path):
+        """The extractor must always return a string."""
+        file = tmp_path / "doc.html"
+        file.write_text("<html><body><p>Test</p></body></html>", encoding="utf-8")
+
+        result = HTMLExtractor.extract(file)
+
+        assert isinstance(result, str)
+
+
+# =============================================================================
+# extractors/docx.py
+# =============================================================================
+
+class TestDOCXExtractor:
+    """
+    Tests for DOCXExtractor.
+
+    DOCX extraction must return text content from Word documents.
+    We create minimal valid .docx files using python-docx.
+    """
+
+    def test_extracts_paragraph_text(self, tmp_path):
+        """
+        Text from document paragraphs must be extracted correctly.
+        Paragraphs are the primary content unit in Word documents.
+        """
+        import docx as python_docx
+
+        file = tmp_path / "doc.docx"
+        doc = python_docx.Document()
+        doc.add_paragraph("First paragraph")
+        doc.add_paragraph("Second paragraph")
+        doc.save(str(file))
+
+        result = DOCXExtractor.extract(file)
+
+        assert "First paragraph" in result
+        assert "Second paragraph" in result
+
+    def test_returns_string(self, tmp_path):
+        """The extractor must always return a string."""
+        import docx as python_docx
+
+        file = tmp_path / "doc.docx"
+        doc = python_docx.Document()
+        doc.add_paragraph("Some text")
+        doc.save(str(file))
+
+        result = DOCXExtractor.extract(file)
+
+        assert isinstance(result, str)
+
+    def test_empty_document_returns_empty_string(self, tmp_path):
+        """A document with no paragraphs must return an empty string."""
+        import docx as python_docx
+
+        file = tmp_path / "empty.docx"
+        doc = python_docx.Document()
+        doc.save(str(file))
+
+        result = DOCXExtractor.extract(file)
+
+        assert isinstance(result, str)
+        assert result == ""
