@@ -10,6 +10,7 @@ import psycopg2
 from Ingestion.core.loader import load_file
 from Ingestion.core.checksum import file_checksum
 from Ingestion.core.es_repository import get_client, ensure_index
+from Ingestion.core.normalizer import normalize_text
 from Ingestion.pipelines.ingest_postgres import ingest_document_postgres
 from Ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
@@ -59,7 +60,8 @@ def ingest_folder(root_path: Path, source: str) -> dict:
 
         try:
             checksum = file_checksum(str(path))
-            content = load_file(path)
+            raw_content = load_file(path)
+            content = normalize_text(raw_content)
 
             doc = {
                 "doc_id": str(uuid.uuid4()),

@@ -21,7 +21,7 @@ CREATE TABLE documents (
     path TEXT NOT NULL,
     title TEXT,
     language TEXT,
-    checksum TEXT,
+    checksum TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now()
 );
