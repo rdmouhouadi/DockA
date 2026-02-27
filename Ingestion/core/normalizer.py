@@ -2,7 +2,7 @@ import re
 import unicodedata
 
 
-def normalize_text(text: str) -> str:
+def normalize_text(text: str | None) -> str:
     """
     Normalize extracted document text for indexing.
 
