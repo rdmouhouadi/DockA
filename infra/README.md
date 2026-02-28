@@ -2,7 +2,8 @@
 
 This document describes the **infrastructure layer** of **DocKA**.
 
-Its role is to provide a **reproducible runtime environment** for DocKA services while remaining strictly **decoupled from business logic**.
+Its role is to provide a **reproducible runtime environment** for DocKA services
+while remaining strictly **decoupled from business logic**.
 
 > Infrastructure in DocKA is an **adapter layer**, not an intelligence layer.
 
@@ -47,28 +48,53 @@ No infrastructure decision should leak into the core codebase.
 
 Each major capability runs in its own container:
 
-- API
-- UI
+- API (FastAPI)
+- UI (Streamlit)
 - PostgreSQL
 - Elasticsearch
-- Airflow
+- Airflow (webserver, scheduler, worker, triggerer)
+- Redis (Celery broker)
+- pgAdmin
 
-This ensures:
-- isolation
-- reproducibility
-- explicit contracts between services
+This ensures isolation, reproducibility, and explicit contracts between services.
 
 ---
 
-### 3️⃣ Configuration via Environment Variables
+### 3️⃣ Two Isolated Databases, One PostgreSQL Instance
+
+DocKA runs two logically separate databases on the same PostgreSQL server:
+
+| Database | Purpose | Owner |
+|----------|---------|-------|
+| `docka_app` | Document metadata, application data | DocKA application |
+| `docka_airflow` | Airflow internal metadata | Airflow only |
+
+**Why two databases?**
+- Prevents Airflow's internal tables from polluting the application schema
+- Allows independent backups and restores
+- Follows the principle of least privilege — the app never touches `docka_airflow`
+
+The schema for `docka_app` is initialized via `postgres/01_init.sql`
+on first container start.
+
+---
+
+### 4️⃣ Configuration via Environment Variables
 
 All configuration is injected at runtime using environment variables.
 
 Rules:
 - No secrets in code
 - No hardcoded endpoints
-- `.env` files are never committed
-- `.env.example` documents required variables
+- `.env` files are never committed to git
+- `.env.example` documents all required variables
+
+---
+
+### 5️⃣ Dev-First, Production-Oriented
+
+The infrastructure is designed for learning, debugging, and iteration —
+but structured so it can evolve naturally toward staging and production.
 
 ---
 
@@ -76,27 +102,23 @@ Rules:
 
 ```bash
 infra/
-├── README.md                 # 📘 This document
-├── docker/
-│   ├── api.Dockerfile        # FastAPI container
-│   ├── ui.Dockerfile         # Streamlit container
-│   └── airflow.Dockerfile    # Airflow container 
+├── README.md                     # 📘 This document
 │
-├── docker-compose.yml        # Local orchestration
+├── docker/
+│   ├── api.Dockerfile            # FastAPI container
+│   ├── ui.Dockerfile             # Streamlit container
+│   ├── airflow.Dockerfile        # Airflow container
+│   └── airflow.requirements.txt  # Python deps for Airflow worker
+│
+├── elasticsearch/
+│   └── mappings/
+│       └── docs_v1.json          # Elasticsearch index mapping
+│
+├── postgres/
+│   └── 01_init.sql               # DB creation + schema init
+│
+└── docker-compose.yml            # Local orchestration
 ```
-
----
-
-### 4️⃣ Dev-First, Production-Oriented
-
-The infrastructure is designed for:
-- learning
-- debugging
-- iteration
-
-But structured so it can evolve naturally toward:
-- staging
-- production
 
 ---
 
@@ -104,114 +126,191 @@ But structured so it can evolve naturally toward:
 
 ### 🔹 API Service (FastAPI)
 
-**Purpose**
-- Expose DocKA Core capabilities via HTTP
-- Serve as the stable contract for:
-  - UI
-  - future agents
-  - external integrations
+**Container:** `api` — Port `8000`
 
-**Responsibilities**
-- Request validation
-- Health checks
-- Calling DocKA Core services
-- Returning structured responses
+**Purpose:**
+- Expose DocKA search capabilities via HTTP
+- Serve as the stable contract for the UI, future agents, and external integrations
 
-The API is **stateless** and does not store data locally.
+**Responsibilities:**
+- Request validation and parameter bounds checking
+- Health check endpoint (`GET /health`)
+- Calling the retrieval service
+- Returning structured JSON responses
+
+The API is **stateless** — it does not store data locally.
+Interactive documentation is available at `http://localhost:8000/docs`.
 
 ---
 
 ### 🔹 UI Service (Streamlit)
 
-**Purpose**
-- Human-facing interface
-- Debugging and exploration
-- Internal demos
+**Container:** `ui` — Port `8501`
 
-**Responsibilities**
-- Submit queries
-- Display results
-- Visualize system behavior
+**Purpose:**
+- Human-facing interface for search and document upload
+- Internal demos and exploration
 
-The UI contains **no business logic**.
+**Responsibilities:**
+- Submit queries and display ranked results with snippets
+- Upload documents (single file, multiple files, ZIP)
+- Display ingested source tags and document counts
+- System health check
+
+The UI calls the ingestion pipeline **directly** for user uploads,
+bypassing Airflow for immediate feedback.
+For scheduled/batch ingestion, Airflow is used.
+
+The UI contains **no business logic** beyond orchestrating these calls.
 
 ---
 
 ### 🔹 PostgreSQL (Metadata Store)
 
-**Purpose**
-- Source of truth for document metadata
-- Enforce idempotency
-- Store feedback and annotations (later phases)
+**Container:** `postgres` — Port `5432`
 
-**Typical data**
-- document identifiers
-- paths
-- checksums
-- titles
-- languages
-- timestamps
+**Purpose:**
+Source of truth for all document metadata and application state.
 
-PostgreSQL is **not** used for search.
+**Databases:**
+
+`docka_app` — Application database:
+```sql
+CREATE TABLE documents (
+    id         SERIAL PRIMARY KEY,
+    doc_id     TEXT UNIQUE NOT NULL,
+    source     TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    title      TEXT,
+    language   TEXT,
+    checksum   TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now()
+);
+```
+
+`docka_airflow` — Airflow internal metadata (managed by Airflow, never touched by the app).
+
+PostgreSQL is **not** used for search — only for metadata and idempotency enforcement.
+pgAdmin is available at `http://localhost:5050` for database inspection.
 
 ---
 
 ### 🔹 Elasticsearch (Search Engine)
 
-**Purpose**
-- Keyword-based retrieval (Phase 1)
-- Hybrid retrieval later (Phase 2)
+**Container:** `elasticsearch` — Port `9200`
 
-**Responsibilities**
-- Indexing documents
-- Ranking (BM25)
-- Snippet generation
+**Purpose:**
+- Keyword-based retrieval via BM25 (Phase 1)
+- Hybrid retrieval via BM25 + vector search (Phase 2)
 
-Elasticsearch complements PostgreSQL; it does not replace it.
+**Index:** `docka_documents`
+
+**Key mapping decisions:**
+- `content` — `text` type, standard analyzer — full-text search
+- `title` — `text` type, boosted 3× at query time
+- `path`, `checksum` — `keyword`, `index: false` — stored but not searchable
+- `language` — `keyword` — filterable by language
+
+Elasticsearch is a **disposable index** — it can be deleted and rebuilt
+at any time by re-running the ingestion pipeline against PostgreSQL.
+
+**Version:** Elasticsearch 8.12 — Python client pinned to `elasticsearch==8.12.0`.
 
 ---
 
 ### 🔹 Airflow (Scheduler)
 
-**Purpose**
+**Containers:** `airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-triggerer`
+**Port:** `8088` (webserver UI)
+
+**Purpose:**
 - Schedule ingestion jobs
 - Monitor pipeline execution
 - Retry on failure
 
-**Critical rule**
-> Airflow orchestrates pipelines, but never contains ingestion logic.
+**Executor:** CeleryExecutor with Redis as the message broker.
 
-All logic must remain reusable outside Airflow.
+**Version:** Airflow 2.10.4
+*(Airflow 3.x was evaluated and rejected due to JWT authentication failures
+in multi-container Docker setups — see `docs/troubleshooting.md` for details.)*
+
+**Critical rule:**
+> Airflow orchestrates pipelines but never contains ingestion logic.
+> All logic must remain reusable outside Airflow.
+
+---
+
+### 🔹 Redis (Celery Broker)
+
+**Container:** `redis` — Port `6379`
+
+**Purpose:**
+Message broker for Airflow's CeleryExecutor.
+The scheduler publishes tasks to Redis; workers consume them.
+
+Redis is an infrastructure concern only — the application never interacts with it directly.
+
+---
+
+### 🔹 pgAdmin (Database UI)
+
+**Container:** `pgadmin` — Port `5050`
+
+**Purpose:**
+Web-based PostgreSQL administration interface for development and debugging.
+Not used in production.
 
 ---
 
 ## 🔌 Networking Model
 
-All services run on a private Docker bridge network.
+All services run on a private Docker bridge network named `docka`.
 
-- Services resolve each other via DNS (service names)
-- Databases are not exposed to the host
-- Only API and UI ports are published
+```
+┌─────────────────────────────────────────────┐
+│              Docker Network: docka           │
+│                                             │
+│  api ──────────────────────────► postgres   │
+│  ui  ──────────────────────────► api        │
+│  airflow-worker ───────────────► postgres   │
+│  airflow-worker ───────────────► elasticsearch │
+│  airflow-scheduler ────────────► redis      │
+│  airflow-worker ───────────────► redis      │
+└─────────────────────────────────────────────┘
+```
 
-Examples:
-- API → `postgres:5432`
-- UI → `api:8000`
-- Airflow → internal services only
+- Services resolve each other via DNS (container name = hostname)
+- PostgreSQL and Elasticsearch are **not exposed** to the host by default
+- Only `api:8000`, `ui:8501`, `airflow-webserver:8088`, and `pgadmin:5050` are published
 
 ---
 
-## 🔐 Configuration & Secrets
+## 📦 Port Reference
 
-Configuration is injected via environment variables such as:
+| Service | Host Port | Purpose |
+|---------|-----------|---------|
+| Streamlit UI | 8501 | User interface |
+| FastAPI | 8000 | Search API + health |
+| Airflow | 8088 | Pipeline orchestration |
+| Elasticsearch | 9200 | Search engine (dev only) |
+| PostgreSQL | 5432 | Metadata store (dev only) |
+| pgAdmin | 5050 | Database UI |
+| Redis | 6379 | Celery broker (internal) |
 
-- database connection parameters
-- Elasticsearch endpoint
-- runtime modes
+---
 
-Rules:
-- No secrets committed
-- `.env` files ignored by git
-- `.env.example` documents required variables
+## 💾 Volume Strategy
+
+| Volume | Type | Purpose |
+|--------|------|---------|
+| `postgres_data` | Named volume | Persistent database storage |
+| `elasticsearch_data` | Named volume | Persistent search index |
+| `./data` → `/data` | Bind mount | Document storage (samples + uploads) |
+| `./Ingestion` → `/opt/airflow/Ingestion` | Bind mount | Ingestion code in Airflow worker |
+
+**Important:** Named volumes persist across `docker compose down`.
+Use `docker compose down -v` to perform a full reset including data.
 
 ---
 
@@ -219,17 +318,10 @@ Rules:
 
 ### M1 — Local Infrastructure Foundation ✅
 
-**Scope**
-- Docker Compose setup
-- API container
-- UI container
-- PostgreSQL
-- Elasticsearch
-- Private network
-- Port exposure
+Docker Compose setup with all services, private network, port exposure.
 
-**Exit Criteria**
-- `docker compose up` succeeds
+**Exit criteria:**
+- `docker compose up --build` succeeds
 - API reachable on `localhost:8000`
 - UI reachable on `localhost:8501`
 - PostgreSQL accessible via pgAdmin
@@ -239,53 +331,68 @@ Rules:
 
 ### M2 — Ingestion Runtime Support ✅
 
-**Scope**
-- Airflow container
-- DAG discovery
-- Volume mounts for documents
-- Centralized logs
+Airflow with CeleryExecutor, DAG discovery, volume mounts.
 
-**Exit Criteria**
-- Airflow UI accessible
+**Exit criteria:**
+- Airflow UI accessible at `localhost:8088`
 - DAGs trigger pipelines successfully
-- Failures are visible and debuggable
+- Failures visible and debuggable in Airflow UI
+- JSON-structured worker logs
 
 ---
 
-### M3 — Observability Basics ⬜
+### M3 — Two-Database Isolation ✅
 
-**Scope**
-- Structured logs
-- Health endpoints
-- Basic service metrics
+Separate `docka_app` and `docka_airflow` databases on the same PostgreSQL instance.
 
-**Exit Criteria**
-- Issues can be diagnosed without guesswork
-- Clear visibility into system behavior
+**Exit criteria:**
+- Application schema isolated from Airflow internal tables
+- Independent backup and restore possible
+- No cross-database contamination
 
 ---
 
-### M4 — Production Hardening (Later) ⬜
+### M4 — Observability Basics ⬜
 
-**Scope**
-- Resource limits
-- Authentication
-- Externalized storage
+Structured logs, health endpoints, basic service metrics.
+
+**Exit criteria:**
+- Issues diagnosable without guesswork
+- Clear visibility into per-service behavior
+- Health endpoint reports status of all dependencies
+
+---
+
+### M5 — Domain Portal Infrastructure ⬜ *(Phase 4)*
+
+Infrastructure support for user-triggered web corpus ingestion.
+
+**Scope:**
+- Airflow DAG API exposure (trigger DAGs from the UI)
+- Domain configuration table in `docka_app`
+- Web source adapter containers (rate limiting, proxy)
+
+---
+
+### M6 — Production Hardening ⬜ *(Future)*
+
+**Scope:**
+- Resource limits per container
+- Authentication for API and Airflow
+- Externalized secrets management
 - CI/CD integration
 
 ---
 
 ## 🧠 Relationship to DocKA Core
 
-| Layer | Responsibility |
-|------|----------------|
-| Core | What happens |
-| Pipelines | In what order |
-| Infrastructure | Where and when |
+| Layer | Answers the question |
+|-------|---------------------|
+| Core | *What* happens |
+| Pipelines | *In what order* |
+| Infrastructure | *Where* and *when* |
 
-Infrastructure answers only one question:
-
-> “Where does this run?”
+Infrastructure answers only one question: **"Where does this run?"**
 
 ---
 
@@ -293,9 +400,9 @@ Infrastructure answers only one question:
 
 The infrastructure layer is intentionally:
 
-- simple
-- explicit
-- replaceable
-- boring by design
+- **Simple** — one `docker compose up` to start everything
+- **Explicit** — every service and connection is declared
+- **Replaceable** — Docker Compose can be swapped for Kubernetes without touching core logic
+- **Boring by design** — predictability over cleverness
 
 This is what allows **DocKA Core** to remain clean, testable, and future-proof.

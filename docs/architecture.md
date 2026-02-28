@@ -1,239 +1,456 @@
-# DocKA — System Architecture
+# 🏗️ DocKA — Architecture
 
-## 1. Purpose
-
-DocKA (Document–Knowledge–Access) is a **modular Information Retrieval platform**
-designed to ingest, index, and retrieve technical documents efficiently.
-
-The architecture is intentionally:
-- **Simple enough** for a single-engineer POC
-- **Structured enough** to scale to enterprise support use cases
-- **Explicitly layered** to support future AI agents and domain extensions
-
-This document describes the **DocKA Core architecture** (knowledge platform only).
-Domain-specific support logic (e.g. smart metering) is intentionally excluded at this stage.
+This document describes the technical architecture of DocKA v0.1.0.
 
 ---
 
-## 2. Architectural Goals
+## Table of Contents
 
-- Clear separation between **ingestion**, **retrieval**, and **presentation**
-- Decoupled batch (offline) and query-time (online) workloads
-- Infrastructure that can be reproduced locally using Docker
-- Observability at every stage (ingestion, search, generation)
-- Architecture compatible with future AI agent integration
-
----
-
-## 3. High-Level Architecture
-
-
----
-
-## 4. Component Breakdown
-
-### 4.1 Document Sources
-
-**Role**
-- Provide raw knowledge content
-
-**Examples**
-- Manufacturer documentation
-- Network and protocol specifications
-- Operational manuals
-
-**Notes**
-- Documents are immutable inputs
-- Versioning is handled downstream
+1. [Design Philosophy](#design-philosophy)
+2. [System Overview](#system-overview)
+3. [Component Breakdown](#component-breakdown)
+4. [Data Flow](#data-flow)
+5. [Database Design](#database-design)
+6. [Ingestion Architecture](#ingestion-architecture)
+7. [Search Architecture](#search-architecture)
+8. [Infrastructure](#infrastructure)
+9. [Key Design Decisions](#key-design-decisions)
 
 ---
 
-### 4.2 Ingestion Layer (Airflow)
+## Design Philosophy
 
-**Role**
-- Orchestrate document ingestion as batch jobs
+DocKA is built around three core principles:
 
-**Responsibilities**
-1. Detect new or updated documents
-2. Extract raw text
-3. Clean and normalize content
-4. Detect language
-5. Chunk documents (future phases)
-6. Store metadata
-7. Index content into search systems
+**1 — Core First, Infrastructure Later**
+All business logic lives in pure Python modules with no dependency on Airflow, Docker, or any framework.
+Infrastructure is an adapter. This means the same ingestion code runs in a DAG, a CLI script, a test, or a Streamlit upload handler.
 
-**Why Airflow?**
-- Clear DAG visualization
-- Retry and backfill support
-- Industry-standard for data pipelines
+**2 — PostgreSQL is the Source of Truth**
+Elasticsearch is a disposable search index. If it is deleted or corrupted, it can be rebuilt
+from scratch by re-running the ingestion pipeline. Document metadata and history live in PostgreSQL.
 
-**Key Design Rule**
-> Ingestion must be **idempotent**  
-> Re-running a DAG should never duplicate data.
+**3 — Idempotency by Design**
+Every ingestion operation is safe to re-run. Content-based checksums (SHA-256) prevent
+duplicate documents regardless of how many times the pipeline runs.
 
 ---
 
-### 4.3 Metadata Store (PostgreSQL)
+## System Overview
 
-**Role**
-- Store authoritative document metadata
-
-**Typical Fields**
-- Document ID
-- Source path / URI
-- Title
-- Language
-- Author (if available)
-- Checksum / hash
-- Ingestion timestamp
-
-**Why PostgreSQL?**
-- Strong consistency
-- Structured queries
-- Easy integration with Airflow and FastAPI
-
-**Important**
-PostgreSQL does **not** store full document text for retrieval.
-
----
-
-### 4.4 Search Index (Elasticsearch)
-
-**Role**
-- Provide fast and explainable keyword search
-
-**Responsibilities**
-- Index cleaned document text
-- Apply language-specific analyzers
-- Rank results using BM25
-
-**Indexing Strategy**
-- One index per schema version (e.g. `docka_docs_v1`)
-- Index is disposable and rebuildable
-
-**Why Elasticsearch first?**
-- Transparent scoring (BM25)
-- Mature ecosystem
-- Excellent baseline for IR learning
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          DocKA Platform                              │
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐    │
+│  │  Data Sources │    │  Ingestion   │    │   Storage Layer    │    │
+│  │              │    │  Pipeline    │    │                    │    │
+│  │  • Filesystem│───▶│              │───▶│  PostgreSQL        │    │
+│  │  • Uploads   │    │  • Extract   │    │  (metadata)        │    │
+│  │  • Web APIs  │    │  • Normalize │    │                    │    │
+│  │    (Phase 4) │    │  • Checksum  │    │  Elasticsearch     │    │
+│  └──────────────┘    │  • Persist   │───▶│  (search index)    │    │
+│                       └──────────────┘    └─────────┬──────────┘   │
+│                                                      │              │
+│  ┌──────────────────────────────────────────────────▼───────────┐  │
+│  │                      API Layer (FastAPI)                      │  │
+│  │                    GET /search?q=...&size=10                  │  │
+│  └──────────────────────────────────────────────────┬───────────┘  │
+│                                                      │              │
+│  ┌──────────────────────────────────────────────────▼───────────┐  │
+│  │                    UI Layer (Streamlit)                       │  │
+│  │              Search · Upload · Source Tags                    │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                  Orchestration (Airflow)                       │ │
+│  │           Scheduled ingestion · Retries · Monitoring          │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-### 4.5 Retrieval API (FastAPI)
+## Component Breakdown
 
-**Role**
-- Act as the **single entry point** for all retrieval logic
+### 🔴 Ingestion Core — `Ingestion/core/`
 
-**Responsibilities**
-- Accept user queries
-- Validate inputs
-- Execute retrieval strategies
-- Format ranked results
-- Expose stable APIs
+The heart of DocKA. Pure Python, no framework dependencies.
 
-**Initial Endpoints**
-- `POST /search`
+| Module | Responsibility |
+|--------|---------------|
+| `loader.py` | Scans directories and dispatches files to the correct extractor |
+| `checksum.py` | Computes SHA-256 content hashes for idempotency |
+| `normalizer.py` | Cleans extracted text (whitespace, control chars, page numbers) |
+| `repository.py` | PostgreSQL interactions (insert, existence checks) |
+| `es_repository.py` | Elasticsearch interactions (index creation, document indexing) |
 
-**Future Endpoints**
-- `/ask` (RAG)
-- `/chat` (multi-turn)
-- `/feedback`
+### 🔴 Extractors — `Ingestion/extractors/`
 
-**Key Rule**
-> No domain-specific logic lives here.
+Each extractor handles exactly one file format and returns clean text.
+
+| Extractor | Format | Library |
+|-----------|--------|---------|
+| `pdf.py` | PDF documents | pypdf |
+| `docx.py` | Word documents | python-docx |
+| `html.py` | HTML files | BeautifulSoup4 |
+| `txt.py` | Plain text | stdlib only |
+
+**Design rule:** Adding a new format requires only creating a new extractor file
+and registering it in `__init__.py`. The pipeline never changes.
+
+### 🟡 Pipelines — `Ingestion/pipelines/`
+
+Thin orchestration layer. Assembles core modules into reusable workflows.
+
+| Pipeline | Responsibility |
+|----------|---------------|
+| `ingest_folder.py` | Scans a folder and ingests all supported documents |
+| `ingest_postgres.py` | Persists one document to PostgreSQL |
+| `ingest_elasticsearch.py` | Indexes one document into Elasticsearch |
+
+Each sub-pipeline handles **one document, one destination**.
+`ingest_folder.py` is a coordinator — it calls the others.
+
+### 🔵 Airflow — `Ingestion/airflow/`
+
+Infrastructure adapter only. Contains no business logic.
+
+```
+Airflow DAG
+    └── calls ingest_folder(path, source)
+              └── calls ingest_document_postgres(conn, doc)
+              └── calls ingest_document_elasticsearch(es_client, doc)
+```
+
+### 🟢 API — `app/backend_api/`
+
+FastAPI application exposing DocKA search capabilities over HTTP.
+
+| Module | Responsibility |
+|--------|---------------|
+| `api_main.py` | App entrypoint, router registration, health check |
+| `routers/search.py` | `GET /search` endpoint — validates input, calls service |
+| `services/retrieval.py` | BM25 query construction, Elasticsearch call, result formatting |
+
+### 🟢 UI — `app/frontend/`
+
+Streamlit application providing a human-facing interface.
+
+**Features:**
+- Keyword search with highlighted snippets and relevance scores
+- File upload (single, multiple, ZIP) with source tagging
+- Sidebar showing ingested source tags and document counts
+- System health check
+
+**Architecture note:** The UI calls `ingest_folder()` directly for uploads,
+bypassing Airflow. This gives immediate feedback to the user.
+Airflow handles scheduled/batch ingestion only.
 
 ---
 
-### 4.6 User Interface (Streamlit)
-
-**Role**
-- Human-facing interface for DocKA
-
-**Responsibilities**
-- Query input
-- Result visualization
-- Snippet inspection
-- Debug and demo support
-
-**Why Streamlit?**
-- Fast iteration
-- Minimal frontend overhead
-- Ideal for POCs and internal tools
-
----
-
-## 5. Data Flow (Phase 1)
+## Data Flow
 
 ### Ingestion Flow
 
-Document --> Extract --> Clean --> Language Detect --> Store Metadata (PostgreSQL) --> Index text (Elasticsearch)
+```
+File on disk / User upload
+        │
+        ▼
+[1] file_checksum(path)
+        │
+        ├── checksum exists in PostgreSQL? → SKIP (idempotent)
+        │
+        ▼
+[2] extractor.extract(path)          ← format-specific (PDF, DOCX, HTML, TXT)
+        │
+        ▼
+[3] normalize_text(raw_content)      ← clean whitespace, page numbers, encoding
+        │
+        ▼
+[4] detect_language(content)         ← 'fr', 'en', or None
+        │
+        ▼
+[5] Build normalized document dict
+    {
+        doc_id:     uuid4(),
+        source:     "sample" | user-defined tag,
+        path:       original file path,
+        title:      filename stem,
+        language:   detected language,
+        content:    normalized text,
+        checksum:   sha256 hash,
+        created_at: UTC timestamp
+    }
+        │
+        ├──▶ [6a] insert_document(conn, doc)       → PostgreSQL (metadata only)
+        │
+        └──▶ [6b] index_document(es_client, doc)   → Elasticsearch (full content)
+```
 
-### Query Flow
+### Search Flow
 
-User Query --> FastAPI --> Elasticsearch (BM25) --> Ranked Results --> UI
-
+```
+User query: "bluetooth alarme"
+        │
+        ▼
+FastAPI GET /search?q=bluetooth+alarme&size=10
+        │
+        ▼
+retrieval.search_documents(query, size)
+        │
+        ▼
+Elasticsearch multi_match query
+    {
+        fields: ["title^3", "content"],
+        type: "best_fields",
+        fuzziness: "AUTO"
+    }
+        │
+        ▼
+BM25 ranking + highlight extraction
+        │
+        ▼
+JSON response
+    {
+        query: "bluetooth alarme",
+        total: 7,
+        results: [
+            {
+                doc_id, title, source, path,
+                language, score, snippet (with <em> tags)
+            }
+        ]
+    }
+        │
+        ▼
+Streamlit renders results with scores and highlighted snippets
+```
 
 ---
 
-## 6. Deployment Model (POC)
+## Database Design
 
-DocKA Core is deployed locally using **Docker Compose**.
+### PostgreSQL — `docka_app`
 
-### Containers
+Source of truth for document metadata.
 
-- PostgreSQL
-- Elasticsearch
-- Airflow (webserver + scheduler)
-- FastAPI service
-- Streamlit UI
+```sql
+CREATE TABLE documents (
+    id         SERIAL PRIMARY KEY,
+    doc_id     TEXT UNIQUE NOT NULL,      -- UUID, stable document identifier
+    source     TEXT NOT NULL,             -- origin tag (e.g. "sample", "healthcare")
+    path       TEXT NOT NULL,             -- original file path
+    title      TEXT,                      -- document title (filename stem)
+    language   TEXT,                      -- detected language code ('fr', 'en', ...)
+    checksum   TEXT UNIQUE NOT NULL,      -- SHA-256 hash (idempotency key)
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now()
+);
 
-### Networking
+CREATE INDEX idx_documents_checksum ON documents(checksum);
+CREATE INDEX idx_documents_doc_id   ON documents(doc_id);
+```
 
-- Single private Docker network
-- No public exposure except UI/API ports
+**Key constraint:** `checksum UNIQUE` — this is the idempotency enforcement.
+Attempting to insert a document with an existing checksum silently does nothing (`ON CONFLICT DO NOTHING`).
+
+### PostgreSQL — `docka_airflow`
+
+Airflow internal metadata database. Completely isolated from application data.
+Managed entirely by Airflow — DocKA never reads or writes to this database.
+
+### Elasticsearch — `docka_documents`
+
+Search index. Stores full document content for BM25 retrieval.
+
+```json
+{
+  "mappings": {
+    "properties": {
+      "doc_id":     { "type": "keyword" },
+      "source":     { "type": "keyword" },
+      "path":       { "type": "keyword", "index": false },
+      "title":      { "type": "text", "analyzer": "standard" },
+      "content":    { "type": "text", "analyzer": "standard" },
+      "language":   { "type": "keyword" },
+      "checksum":   { "type": "keyword", "index": false },
+      "created_at": { "type": "date" }
+    }
+  }
+}
+```
+
+**Key decisions:**
+- `path` and `checksum` are `index: false` — stored but not searchable (no value in searching these)
+- `title` is boosted 3x at query time (`title^3`) — title matches rank higher than content matches
+- `content.keyword` is ignored for very long texts — this is expected Elasticsearch behavior
 
 ---
 
-## 7. Observability
+## Ingestion Architecture
 
-| Component      | Observability Mechanism |
-|---------------|--------------------------|
-| Airflow       | Web UI, task logs        |
-| API           | Request logs, latency   |
-| Elasticsearch | Query profiling          |
+### Layered Design
+
+```
+┌─────────────────────────────────────────────┐
+│  Layer 4 — Airflow (Infrastructure Adapter) │  🔵 schedules only
+├─────────────────────────────────────────────┤
+│  Layer 3 — Pipelines (Thin Orchestration)   │  🟡 assembly
+├─────────────────────────────────────────────┤
+│  Layer 2 — Extractors (Format-Specific)     │  🔴 text extraction
+├─────────────────────────────────────────────┤
+│  Layer 1 — Core (Pure Logic)                │  🔴 checksum, normalize, persist
+└─────────────────────────────────────────────┘
+```
+
+### Idempotency Strategy
+
+DocKA uses **content-based checksums** (SHA-256) as the idempotency key.
+
+```
+Same file content → Same checksum → INSERT skipped (both PG and ES)
+Modified file     → New checksum  → INSERT succeeds → new document version
+```
+
+This means:
+- Re-running the pipeline on the same folder is always safe
+- Airflow retries never create duplicate documents
+- User re-uploads of unchanged files are silently skipped
+
+### Extractor Registry Pattern
+
+```python
+EXTRACTOR_REGISTRY = {
+    ".pdf":  PDFExtractor,
+    ".txt":  TXTExtractor,
+    ".docx": DOCXExtractor,
+    ".html": HTMLExtractor,
+}
+```
+
+The loader dispatches to the correct extractor based on file extension.
+Adding a new format = adding one file + one line in the registry.
 
 ---
 
-## 8. Non-Goals (for Phase 1)
+## Search Architecture
 
-- Authentication / authorization
-- Multi-tenancy
-- High availability
-- AI agent orchestration
+### BM25 — How It Works
 
-These are **deliberately postponed**.
+BM25 (Best Match 25) is the ranking algorithm used in Phase 1.
+It scores documents based on three factors:
+
+```
+Score = Σ IDF(term) × TF(term, doc) × (k1 + 1)
+                      ─────────────────────────────
+                      TF(term, doc) + k1 × (1 - b + b × |doc| / avgdl)
+```
+
+Where:
+- **TF** (Term Frequency) — how often the term appears in the document
+- **IDF** (Inverse Document Frequency) — how rare the term is across all documents
+- **|doc| / avgdl** — document length normalization (prevents long docs from dominating)
+- **k1, b** — tuning parameters (Elasticsearch defaults: k1=1.2, b=0.75)
+
+**In practice for DocKA:**
+- `title^3` boost — a query match in the title is worth 3× a match in content
+- `fuzziness: AUTO` — tolerates minor typos (1 edit for short words, 2 for longer)
+- `best_fields` — uses the best-matching field score, not the sum
+
+### Highlighted Snippets
+
+Elasticsearch returns highlighted fragments with matched terms wrapped in `<em>` tags:
+
+```
+"L'adresse <em>bluetooth</em> est inscrite au dos de la borne."
+```
+
+DocKA returns up to 2 fragments of 200 characters each per document,
+joined by ` ... ` in the UI.
 
 ---
 
-## 9. Forward Compatibility
+## Infrastructure
 
-This architecture explicitly supports future additions:
+### Docker Compose Services
 
-- Vector databases (semantic search)
-- RAG pipelines
-- AI support agents
-- Domain-specific support modules
-- Multi-solution smart metering support
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Docker Network: docka                  │
+│                                                          │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────────────┐  │
+│  │   api    │  │    ui    │  │       postgres         │  │
+│  │  :8000   │  │  :8501   │  │        :5432           │  │
+│  └──────────┘  └──────────┘  │  docka_app             │  │
+│                               │  docka_airflow         │  │
+│  ┌──────────────────────┐    └───────────────────────┘  │
+│  │    elasticsearch     │                                │
+│  │       :9200          │    ┌───────────────────────┐  │
+│  └──────────────────────┘    │        redis           │  │
+│                               │        :6379           │  │
+│  ┌──────────────────────┐    └───────────────────────┘  │
+│  │  airflow-webserver   │                                │
+│  │       :8088          │    ┌───────────────────────┐  │
+│  ├──────────────────────┤    │       pgadmin          │  │
+│  │  airflow-scheduler   │    │        :5050           │  │
+│  ├──────────────────────┤    └───────────────────────┘  │
+│  │  airflow-worker      │                                │
+│  ├──────────────────────┤                                │
+│  │  airflow-triggerer   │                                │
+│  └──────────────────────┘                                │
+└──────────────────────────────────────────────────────────┘
+```
 
-No core redesign is required to support these extensions.
+### Port Reference
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Streamlit UI | 8501 | User interface |
+| FastAPI | 8000 | Search API |
+| Airflow | 8088 | Pipeline orchestration |
+| Elasticsearch | 9200 | Search engine |
+| PostgreSQL | 5432 | Metadata store |
+| pgAdmin | 5050 | Database UI |
+| Redis | 6379 | Celery broker |
+
+### Volume Strategy
+
+| Volume | Purpose |
+|--------|---------|
+| `postgres_data` | Persistent database storage |
+| `elasticsearch_data` | Persistent search index |
+| `./data` → `/data` | Document storage (samples + uploads) |
+| `./Ingestion` → `/opt/airflow/Ingestion` | Ingestion code in Airflow worker |
 
 ---
 
-## 10. Summary
+## Key Design Decisions
 
-DocKA Core is:
-- A **clean IR platform**
-- A **learning-first system**
-- A **foundation for support automation**
+### Why Elasticsearch over a vector database?
+Phase 1 is keyword search (BM25). Elasticsearch is the industry standard for this.
+In Phase 2, Elasticsearch will be extended with vector search capabilities (dense_vector fields),
+making it a hybrid search engine. No database migration needed.
 
-This architecture will be implemented incrementally,
-starting with Docker-based local deployment.
+### Why Airflow 2.10 over 3.x?
+Airflow 3.x introduced a JWT-based execution API between the scheduler and workers.
+In multi-container Docker setups, this caused persistent authentication failures
+with no configuration workaround. Airflow 2.10 with CeleryExecutor is stable,
+production-proven, and handles the same workloads without this issue.
+
+### Why two separate PostgreSQL databases?
+`docka_app` and `docka_airflow` are isolated databases on the same PostgreSQL instance.
+This prevents Airflow's internal metadata from polluting the application schema,
+allows independent backups, and follows the principle of least privilege.
+
+### Why call the pipeline directly from Streamlit for uploads?
+User uploads expect immediate feedback — typically under 5 seconds.
+Routing through Airflow adds 10-30 seconds of scheduling overhead.
+The pipeline is framework-agnostic by design, so calling it directly
+from Streamlit is architecturally correct, not a workaround.
+
+### Why SHA-256 for checksums?
+SHA-256 produces a 64-character hex digest with negligible collision probability
+for document-sized inputs. It reads files in 8KB chunks, making it memory-efficient
+for large PDFs. The checksum is computed on raw bytes (before extraction),
+so it detects any file change — even metadata changes not visible in the text.
