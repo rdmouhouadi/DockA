@@ -1,45 +1,65 @@
-# -------------------------------
-# Virtual Environment
-# -------------------------------
-.venv/
+# =============================================================================
+# DocKA — .gitignore
+# =============================================================================
 
-# -------------------------------
-# Python Version Managers
-# -------------------------------
-.python-version
+# Environment variables — never commit secrets
+.env
+.env.local
+.env.*.local
 
-# -------------------------------
-# Project Config
-# -------------------------------
-pyproject.toml
-main.py
-
-# -------------------------------
-# Python Cache / Bytecode
-# -------------------------------
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# -------------------------------
-# IDE / Editor Files
-# -------------------------------
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
 .vscode/
 .idea/
+*.iml
 
-# -------------------------------
-# Logs / Test / Coverage Files
-# -------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Data — never commit documents or uploads
+data/samples/
+data/uploads/
+
+# Logs
 *.log
-*.coverage
-*.tox
-*.nox
-*.coverage.*
-*.hypothesis/
+logs/
 
-# -------------------------------
-# Database / Local Data
-# -------------------------------
-*.db
-*.sqlite
+# Docker volumes (if accidentally created locally)
+postgres_data/
+elasticsearch_data/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Airflow
+airflow/logs/
+airflow/plugins/
