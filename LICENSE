@@ -1,21 +1,146 @@
-MIT License
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
 
-Copyright (c) 2025 Richie Mouhouadi 
+ Copyright (C) 2026 Richie Mouhouadi
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+                            Preamble
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can change it, that
+you know you can do these things.
+
+  Specifically, the GNU Affero General Public License is designed to
+ensure that modified versions of the software remain available to the
+community. For software used to provide a network service, this ensures
+that modifications made by network operators are returned to the
+community.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU Affero General Public
+License.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.
+
+  "You" refers to the licensee.
+
+  "Modified version" means any work based on the Program.
+
+  "Covered work" means either the unmodified Program or a work based
+on the Program.
+
+  "Propagate" means to do anything with it that requires permission
+under applicable copyright law, other than executing it on a computer or
+modifying a private copy.
+
+  "Convey" means any kind of propagation that enables other parties to
+make or receive copies.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it. "Object code" means any non-source
+form of a work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met. This License explicitly affirms your unlimited
+permission to run the unmodified Program.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License.
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a work in object code form provided that you also
+  convey the machine-readable source code.
+
+  7. Additional Terms.
+
+  You may place additional permissions on material covered by this License.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors.
+
+  11. Network Use is Distribution.
+
+  Notwithstanding any other provision of this License, if you modify
+the Program, your modified version must prominently offer all users
+interacting with it remotely through a computer network an opportunity
+to receive the source code of your modified version.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you that contradict the conditions of
+this License, they do not excuse you from the conditions of this License.
+
+  13. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised versions of the
+GNU Affero General Public License from time to time.
+
+                     END OF TERMS AND CONDITIONS
+
+For the full license text, see: https://www.gnu.org/licenses/agpl-3.0.txt
