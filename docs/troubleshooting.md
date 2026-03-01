@@ -534,4 +534,29 @@ not volume resets.
 
 ---
 
+### ❌ .env Committed and Pushed to GitHub
+
+**When:** Phase 1, before publishing
+**Severity:** Critical — credentials exposed publicly
+
+**What happened:**
+`infra/.env` was accidentally staged and committed before the
+`.gitignore` rule was in place and verified.
+GitHub Secret Scanning flagged it immediately via email alert.
+
+**Resolution:**
+1. Removed file from entire git history using `git filter-branch`
+2. Force pushed to overwrite remote history
+3. Cleaned local refs and garbage collected
+4. Rotated all credentials in `.env`
+
+**Lesson:**
+Always run `git status` and read it carefully before `git commit`.
+Never use `git add .` without checking what's being staged first.
+Prefer `git add <specific-file>` for sensitive directories.
+Run `git log --all --full-history -- .env` before any push to a new repo.
+
+---
+
+
 *Last updated: Phase 1 complete — v0.1.0*
