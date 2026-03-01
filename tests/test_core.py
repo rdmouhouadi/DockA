@@ -19,12 +19,12 @@ Run with:
 import pytest
 from pathlib import Path
 
-from Ingestion.core.checksum import file_checksum
-from Ingestion.core.normalizer import normalize_text
-from Ingestion.pipelines.ingest_folder import detect_language
-from Ingestion.extractors.txt import TXTExtractor
-from Ingestion.extractors.docx import DOCXExtractor
-from Ingestion.extractors.html import HTMLExtractor
+from ingestion.core.checksum import file_checksum
+from ingestion.core.normalizer import normalize_text
+from ingestion.pipelines.ingest_folder import detect_language
+from ingestion.extractors.txt import TXTExtractor
+from ingestion.extractors.docx import DOCXExtractor
+from ingestion.extractors.html import HTMLExtractor
 
 
 # =============================================================================

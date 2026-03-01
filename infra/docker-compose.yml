@@ -211,8 +211,8 @@ services:
     restart: always
 
     environment:
-      PGADMIN_DEFAULT_EMAIL: docka@richie.com
-      PGADMIN_DEFAULT_PASSWORD: docka
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
 
     depends_on:
       - postgres
@@ -474,7 +474,7 @@ services:
       POSTGRES_DB: docka_app
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      ELASTICSEARCH_HOST: http://elasticsearch:9200
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST}
 
     depends_on:
       postgres:
@@ -502,7 +502,7 @@ services:
     restart: unless-stopped
 
     environment:
-      API_BASE_URL: http://api:8000
+      API_BASE_URL: ${API_BASE_URL}
 
     depends_on:
       - api

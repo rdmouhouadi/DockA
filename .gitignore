@@ -19,6 +19,9 @@ dist/
 build/
 .eggs/
 
+# Python version managers
+.python-version
+
 # Virtual environments
 .venv/
 venv/

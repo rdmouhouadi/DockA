@@ -29,7 +29,7 @@ import psycopg2
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.abspath("."))
 
-from Ingestion.pipelines.ingest_folder import ingest_folder
+from ingestion.pipelines.ingest_folder import ingest_folder
 
 # ---------------------------------------------------------------------------
 # Configuration
