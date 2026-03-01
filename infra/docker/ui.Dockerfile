@@ -57,7 +57,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # triggered by user uploads — bypasses Airflow for interactive ingestion)
 # ---------------------------------------------------------------------------
 COPY app/frontend ./app/frontend
-COPY Ingestion ./Ingestion
+COPY ingestion ./ingestion
 
 # ---------------------------------------------------------------------------
 # Expose port

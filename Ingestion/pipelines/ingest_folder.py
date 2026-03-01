@@ -7,12 +7,12 @@ from pathlib import Path
 
 import psycopg2
 
-from Ingestion.core.loader import load_file
-from Ingestion.core.checksum import file_checksum
-from Ingestion.core.es_repository import get_client, ensure_index
-from Ingestion.core.normalizer import normalize_text
-from Ingestion.pipelines.ingest_postgres import ingest_document_postgres
-from Ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
+from ingestion.core.loader import load_file
+from ingestion.core.checksum import file_checksum
+from ingestion.core.es_repository import get_client, ensure_index
+from ingestion.core.normalizer import normalize_text
+from ingestion.pipelines.ingest_postgres import ingest_document_postgres
+from ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
 from langdetect import detect, LangDetectException
 

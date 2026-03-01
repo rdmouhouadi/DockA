@@ -48,8 +48,10 @@ Thumbs.db
 Desktop.ini
 
 # Data — never commit documents or uploads
-data/samples/
-data/uploads/
+data/samples/*
+data/uploads/*
+!data/samples/.gitkeep
+!data/uploads/.gitkeep
 
 # Logs
 *.log

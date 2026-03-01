@@ -1,6 +1,6 @@
 import logging
 import json
-from Ingestion.core.repository import document_exists, insert_document
+from ingestion.core.repository import document_exists, insert_document
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 from pathlib import Path
-from Ingestion.extractors import EXTRACTOR_REGISTRY
+from ingestion.extractors import EXTRACTOR_REGISTRY
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".html", ".txt"}
 

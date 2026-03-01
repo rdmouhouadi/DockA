@@ -6,7 +6,7 @@
 # This compose file deploys the full DocKA Core architecture:
 # - Metadata store (PostgreSQL — two databases: docka_app + docka_airflow)
 # - Search engine (Elasticsearch)
-# - Ingestion orchestrator (Airflow 2.10 — CeleryExecutor + Redis)
+# - ingestion orchestrator (Airflow 2.10 — CeleryExecutor + Redis)
 # - Retrieval API (FastAPI)
 # - User Interface (Streamlit)
 #
@@ -40,7 +40,7 @@
 # DocKA-specific overrides:
 # - Custom Dockerfile (airflow.Dockerfile) extending apache/airflow:2.10.4
 # - docka_airflow database instead of the default 'airflow' database
-# - DocKA volume mounts (DAGs, Ingestion package, app, data)
+# - DocKA volume mounts (DAGs, ingestion package, app, data)
 # - All services on docka_net for cross-service DNS resolution
 # - Performance tuning for laptop/local Docker environments
 #
@@ -88,7 +88,7 @@ x-airflow-common:
     AIRFLOW__CORE__FERNET_KEY: ""
 
     # ---- Webserver ----------------------------------------------------------
-    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-docka_secret_key_change_in_prod}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
 
     # ---- Scheduler health check ---------------------------------------------
@@ -113,7 +113,7 @@ x-airflow-common:
 
     # ---- Python path --------------------------------------------------------
     # Makes DocKA packages importable inside DAG task code
-    PYTHONPATH: /opt/airflow:/opt/airflow/Ingestion:/opt/airflow/app
+    PYTHONPATH: /opt/airflow:/opt/airflow/ingestion:/opt/airflow/app
 
     # ---- Additional pip requirements ----------------------------------------
     # Use ONLY for quick checks — prefer building into airflow.Dockerfile
@@ -121,13 +121,13 @@ x-airflow-common:
 
   volumes:
     # DAG files — ingestion pipeline definitions
-    - ../Ingestion/airflow/dags:/opt/airflow/dags
+    - ../ingestion/airflow/dags:/opt/airflow/dags
 
     # Optional Airflow plugins
-    - ../Ingestion/airflow/plugins:/opt/airflow/plugins
+    - ../ingestion/airflow/plugins:/opt/airflow/plugins
 
-    # Ingestion domain package (importable as `Ingestion.*` in DAG code)
-    - ../Ingestion:/opt/airflow/Ingestion
+    # ingestion domain package (importable as `ingestion.*` in DAG code)
+    - ../ingestion:/opt/airflow/ingestion
 
     # App code — DocKA Core (importable as `app.*` in DAG code)
     - ../app:/opt/airflow/app

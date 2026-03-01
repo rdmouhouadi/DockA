@@ -4,7 +4,7 @@ from pathlib import Path
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from Ingestion.pipelines.ingest_folder import ingest_folder
+from ingestion.pipelines.ingest_folder import ingest_folder
 
 # ---------------------------------------------------------------------------
 # Configuration (later → Airflow Variables)
