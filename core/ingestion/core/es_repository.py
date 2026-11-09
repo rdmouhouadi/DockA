@@ -24,19 +24,22 @@ def ensure_index(client: Elasticsearch, mapping_path: str | Path | None = DEFAUL
     Create the index with mapping if it does not exist.
     Idempotent — safe to call on every pipeline run.
 
-    The mapping is only applied at creation time: to apply a changed mapping,
-    delete the index and re-run ingestion (the index is disposable —
-    PostgreSQL is the source of truth).
+    On an existing index, NEW fields of the mapping are added in place
+    (Elasticsearch allows adding fields, not changing existing ones).
+    To change an existing field's type, rebuild the index (reindex).
     Pass mapping_path=None to fall back to Elasticsearch dynamic mapping.
     """
-    if client.indices.exists(index=INDEX_NAME):
-        logger.info(f"Index '{INDEX_NAME}' already exists")
-        return
-
     mapping = {}
     if mapping_path:
         with open(mapping_path, encoding="utf-8") as f:
             mapping = json.load(f)
+
+    if client.indices.exists(index=INDEX_NAME):
+        properties = mapping.get("mappings", {}).get("properties")
+        if properties:
+            client.indices.put_mapping(index=INDEX_NAME, properties=properties)
+        logger.info(f"Index '{INDEX_NAME}' already exists — mapping fields synced")
+        return
 
     client.indices.create(index=INDEX_NAME, body=mapping)
     logger.info(f"Index '{INDEX_NAME}' created")
@@ -73,9 +76,33 @@ def index_document(client: Elasticsearch, doc: dict):
             "content": doc.get("content", ""),
             "language": doc.get("language"),
             "checksum": doc.get("checksum"),
-            "created_at": doc.get("created_at")
+            "created_at": doc.get("created_at"),
+            # Temporary uploads — search ignores the document once this passes
+            "expires_at": _iso(doc.get("expires_at"))
         }
     )
+
+
+def _iso(value):
+    """datetime → ISO 8601 string for Elasticsearch (None stays None)."""
+    return value.isoformat() if value is not None else None
+
+
+def update_expiry(client: Elasticsearch, doc_id: str, expires_at):
+    """Sync an already-indexed document's expires_at with PostgreSQL."""
+    client.update(index=INDEX_NAME, id=doc_id, doc={"expires_at": _iso(expires_at)})
+
+
+def delete_documents_by_ids(client: Elasticsearch, doc_ids: list[str]) -> int:
+    """Remove documents from the index by doc_id. Returns the number deleted."""
+    if not doc_ids or not client.indices.exists(index=INDEX_NAME):
+        return 0
+    resp = client.delete_by_query(
+        index=INDEX_NAME,
+        query={"terms": {"doc_id": doc_ids}},
+        refresh=True,
+    )
+    return resp["deleted"]
 
 def delete_documents_by_source(client: Elasticsearch, source: str) -> int:
     """

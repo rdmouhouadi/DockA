@@ -1,5 +1,7 @@
 import psycopg2
 
+from ingestion.core.retention import merged_expiry
+
 # ---------------------------------------------------------------------------
 # documents — columns added after v0.1.0
 #
@@ -12,9 +14,14 @@ import psycopg2
 #             extracted text remains (chunks + search index)
 #   Default TRUE matches every pre-existing ingestion path except UI uploads,
 #   which always pass the value explicitly.
+# - expires_at: when a TEMPORARY upload must disappear everywhere
+#     NULL  → searchable until the user removes the source
+#     value → purged (search index, PostgreSQL incl. chunks, kept file) after it
 # ---------------------------------------------------------------------------
 DOCUMENTS_MIGRATIONS = """
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_retained BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_documents_expires_at ON documents(expires_at) WHERE expires_at IS NOT NULL;
 """
 
 # ---------------------------------------------------------------------------
@@ -74,8 +81,8 @@ def insert_document(conn, doc):
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO documents (doc_id, source, path, title, language, checksum, file_retained)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO documents (doc_id, source, path, title, language, checksum, file_retained, expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (checksum) DO NOTHING
             """,
             (
@@ -85,7 +92,8 @@ def insert_document(conn, doc):
                 doc.get("title"),
                 doc.get("language"),
                 doc["checksum"],
-                doc.get("file_retained", True)
+                doc.get("file_retained", True),
+                doc.get("expires_at")
             )
         )
         conn.commit()
@@ -177,6 +185,56 @@ def delete_documents_by_source(conn, source: str) -> int:
     """
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE source = %s", (source,))
+        deleted = cur.rowcount
+    conn.commit()
+    return deleted
+
+
+def extend_retention(conn, checksum: str, expires_at):
+    """
+    Apply a re-upload's retention to already-ingested content.
+
+    Retention is only ever extended (see retention.merged_expiry): a temporary
+    re-upload never shortens a document kept until removed.
+
+    Returns the effective expires_at after the update (None = until removed).
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT expires_at FROM documents WHERE checksum = %s", (checksum,))
+        row = cur.fetchone()
+        if row is None:
+            return expires_at
+
+        effective = merged_expiry(row[0], expires_at)
+        if effective != row[0]:
+            cur.execute(
+                "UPDATE documents SET expires_at = %s, updated_at = now() WHERE checksum = %s",
+                (effective, checksum)
+            )
+    conn.commit()
+    return effective
+
+
+def find_expired_documents(conn) -> list[dict]:
+    """Documents whose temporary retention has passed (expires_at <= now)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT doc_id, path, file_retained
+            FROM documents
+            WHERE expires_at IS NOT NULL AND expires_at <= now()
+            """
+        )
+        rows = cur.fetchall()
+    return [{"doc_id": r[0], "path": r[1], "file_retained": r[2]} for r in rows]
+
+
+def delete_documents_by_ids(conn, doc_ids: list[str]) -> int:
+    """Delete documents by id (chunks cascade). Returns the number deleted."""
+    if not doc_ids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM documents WHERE doc_id = ANY(%s)", (doc_ids,))
         deleted = cur.rowcount
     conn.commit()
     return deleted
