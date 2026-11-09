@@ -558,5 +558,39 @@ Run `git log --all --full-history -- .env` before any push to a new repo.
 
 ---
 
+### ❌ Search Failed: URL Must Include a 'scheme', 'host', and 'port'
+
+**When:** Repo restructure — first run with a `.env` freshly copied from `.env.example`
+**Severity:** High — search broken, ingestion to Elasticsearch broken
+
+**What happened:**
+The UI loaded and listed sources from PostgreSQL, but every search failed with:
+```
+Search failed: URL must include a 'scheme', 'host', and 'port' component (ie 'https://localhost:9200')
+```
+`retrieval.py` and `es_repository.py` pass `ELASTICSEARCH_HOST` directly to
+`Elasticsearch(...)`, which expects a full URL. The template set only the hostname:
+```bash
+ELASTICSEARCH_HOST=elasticsearch
+```
+
+**Resolution:**
+Template fixed to a full URL:
+```bash
+ELASTICSEARCH_HOST=http://elasticsearch:9200
+```
+Then recreate the containers so they pick up the new value:
+```bash
+docker compose up -d --force-recreate api ui
+```
+
+**Lesson:**
+`.env.example` must be tested by starting from a fresh copy — a working local
+`.env` can hide a broken template for a long time.
+Name variables after what they hold: a full URL belongs in `ELASTICSEARCH_URL`,
+not `ELASTICSEARCH_HOST`.
+
+---
+
 
 *Last updated: Phase 1 complete — v0.1.0*
