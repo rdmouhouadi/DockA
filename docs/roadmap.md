@@ -185,14 +185,17 @@ even if the exact words don't match.
 
 ---
 
-### M1 — Document Chunking ⬜
+### M1 — Document Chunking ✅
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Implement chunking module in `core/ingestion/` | ⬜ | Sliding window, 512 tokens, with overlap |
-| Chunk size evaluation | ⬜ | Compare 256, 512, 1024 tokens |
-| Store chunks in PostgreSQL | ⬜ | New `chunks` table linked to `documents` |
-| Update ingestion pipeline to chunk | ⬜ | After normalization step |
+| Implement chunking module in `core/ingestion/` | ✅ | `chunker.py` — sliding window, 500 tokens, 50 overlap |
+| Token counting with the embedding model's tokenizer | ✅ | `tokenizer.py` — e5 tokenizer, char offsets kept for citations |
+| Store chunks in PostgreSQL | ✅ | `chunks` table linked to `documents` (created idempotently) |
+| Update ingestion pipeline to chunk | ✅ | After the document row is written; re-runs backfill older documents |
+| Stable `doc_id` across re-runs | ✅ | Reused by checksum — PostgreSQL, chunks and Elasticsearch share one id |
+| Elasticsearch mapping applied | ✅ | `docs_v1.json` now loaded by `ensure_index()` |
+| Chunk size evaluation | ⬜ | Moved to M4 — needs embeddings to measure retrieval quality |
 
 ---
 
@@ -200,7 +203,7 @@ even if the exact words don't match.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Multilingual embedding model | ⬜ | `paraphrase-multilingual-mpnet-base-v2` (FR + EN) |
+| Multilingual embedding model | ⬜ | `intfloat/multilingual-e5-base` (FR + EN, 512-token input — mpnet was trained at 128) |
 | Add `sentence-transformers` dependency | ⬜ | |
 | Embed chunks at ingestion time | ⬜ | Per-chunk embedding |
 | Store vectors in Elasticsearch | ⬜ | `dense_vector` field type |
