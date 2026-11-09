@@ -3,7 +3,11 @@ import logging
 from pathlib import Path
 
 from ingestion.core.es_repository import get_client, delete_documents_by_ids as es_delete_ids
-from ingestion.core.repository import find_expired_documents, delete_documents_by_ids as pg_delete_ids
+from ingestion.core.repository import (
+    ensure_schema,
+    find_expired_documents,
+    delete_documents_by_ids as pg_delete_ids,
+)
 from ingestion.core.storage import UPLOAD_DIR
 from ingestion.pipelines.ingest_folder import _get_pg_conn
 
@@ -48,6 +52,8 @@ def purge_expired() -> dict:
     """
     conn = _get_pg_conn()
     try:
+        # The purge can run before any ingestion has upgraded the schema
+        ensure_schema(conn)
         expired = find_expired_documents(conn)
         doc_ids = [d["doc_id"] for d in expired]
 

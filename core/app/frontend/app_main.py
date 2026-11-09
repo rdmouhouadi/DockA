@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ingestion.pipelines.ingest_folder import ingest_folder
 from ingestion.pipelines.remove_source import remove_source
+from ingestion.core.repository import ensure_schema
 from ingestion.core.storage import UPLOAD_DIR, source_upload_dir
 from ingestion.core.retention import (
     TEMPORARY_DURATIONS,
@@ -76,6 +77,22 @@ def get_pg_conn():
     )
 
 
+@st.cache_resource
+def upgrade_schema_once():
+    """
+    Bring the database schema up to date once per UI process.
+    The sidebar queries columns (file_retained, expires_at) that older
+    databases only gain on upgrade — without this it would silently show
+    "No sources" until the first ingestion.
+    """
+    conn = get_pg_conn()
+    try:
+        ensure_schema(conn)
+    finally:
+        conn.close()
+    return True
+
+
 def get_ingested_sources() -> list[dict]:
     """
     Fetch distinct source tags, document counts and file retention from
@@ -87,6 +104,7 @@ def get_ingested_sources() -> list[dict]:
       latest expiry among its temporary documents
     """
     try:
+        upgrade_schema_once()
         conn = get_pg_conn()
         with conn.cursor() as cur:
             cur.execute("""
