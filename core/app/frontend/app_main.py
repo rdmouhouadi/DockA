@@ -4,7 +4,8 @@ DocKA — Streamlit Frontend
 Provides:
 - BM25 keyword search over indexed documents
 - File/folder upload with source tagging
-- Per-upload choice to keep the original files or not (off by default)
+- Per-upload choices: keep the original files or not (off by default), and
+  how long the content stays searchable (temporary by default, or until removed)
 - Ingested sources overview in sidebar, with source removal
 
 Upload modes supported:
@@ -37,6 +38,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ingestion.pipelines.ingest_folder import ingest_folder
 from ingestion.pipelines.remove_source import remove_source
 from ingestion.core.storage import UPLOAD_DIR, source_upload_dir
+from ingestion.core.retention import (
+    TEMPORARY_DURATIONS,
+    DEFAULT_TEMPORARY_DURATION,
+    expiry_for,
+    describe_expiry,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -74,14 +81,20 @@ def get_ingested_sources() -> list[dict]:
     Fetch distinct source tags, document counts and file retention from
     PostgreSQL. Used to populate the sidebar sources list.
 
-    files_kept is True only if the original files of ALL the source's
-    documents are kept on disk.
+    - files_kept: True only if the original files of ALL the source's
+      documents are kept on disk
+    - expires_at: None if any document is kept until removed, otherwise the
+      latest expiry among its temporary documents
     """
     try:
         conn = get_pg_conn()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT source, COUNT(*) AS doc_count, BOOL_AND(file_retained) AS files_kept
+                SELECT source,
+                       COUNT(*)                     AS doc_count,
+                       BOOL_AND(file_retained)      AS files_kept,
+                       BOOL_OR(expires_at IS NULL)  AS has_permanent,
+                       MAX(expires_at)              AS last_expiry
                 FROM documents
                 GROUP BY source
                 ORDER BY source
@@ -89,7 +102,12 @@ def get_ingested_sources() -> list[dict]:
             rows = cur.fetchall()
         conn.close()
         return [
-            {"source": row[0], "count": row[1], "files_kept": row[2]}
+            {
+                "source": row[0],
+                "count": row[1],
+                "files_kept": row[2],
+                "expires_at": None if row[3] else row[4],
+            }
             for row in rows
         ]
     except Exception:
@@ -113,8 +131,10 @@ with st.sidebar:
     else:
         for s in sources:
             # Show whether DocKA still holds the original files or only text
-            retention = "🗂️ files kept" if s["files_kept"] else "🔒 text only"
-            st.markdown(f"• **{s['source']}** ({s['count']} docs) · {retention}")
+            files = "🗂️ files kept" if s["files_kept"] else "🔒 text only"
+            # ...and how long it stays searchable
+            lifetime = ("⏳ " if s["expires_at"] else "♾️ ") + describe_expiry(s["expires_at"])
+            st.markdown(f"• **{s['source']}** ({s['count']} docs) · {files} · {lifetime}")
 
         # --- Remove a source ------------------------------------------------
         # "You decide what's searchable": removing a source deletes it from
@@ -278,19 +298,54 @@ with tab_upload:
         )
     )
 
-    # --- Keep original files? -----------------------------------------------
-    # Off by default: DocKA stores only what the user explicitly chooses.
-    # Off → files are processed from a temporary folder and deleted afterwards;
-    #       the extracted text stays searchable (chunks + search index).
-    # On  → originals are kept in data/uploads/<source>/ so they can be
-    #       re-ingested later (e.g. re-chunked or re-embedded).
+    # --- Two explicit storage choices ---------------------------------------
+    # Searching requires storing the extracted text (chunks + search index),
+    # so the user decides separately:
+    # 1. HOW LONG the content is stored and searchable
+    #    - Temporary (default): purged everywhere after the chosen duration
+    #    - Until I remove it:   stays until the source is removed
+    # 2. WHETHER the original files are kept (off by default)
+    #    - kept in data/uploads/<source>/ (for the same lifetime) so DocKA
+    #      can re-process them later, or deleted right after ingestion
+    lifetime_choice = st.radio(
+        "Searchable",
+        ["Temporary", "Until I remove it"],
+        index=0,
+        horizontal=True,
+        help=(
+            "Temporary: the documents, their extracted text and any kept files "
+            "are deleted automatically after the chosen duration."
+        )
+    )
+
+    duration_label = None
+    if lifetime_choice == "Temporary":
+        duration_label = st.selectbox(
+            "Delete after",
+            list(TEMPORARY_DURATIONS),
+            index=list(TEMPORARY_DURATIONS).index(DEFAULT_TEMPORARY_DURATION),
+        )
+
     keep_files = st.checkbox(
         "Keep a copy of the original files",
         value=False,
         help=(
-            "Off: only the extracted text is stored — the files are deleted after ingestion. "
+            "Off: the files are deleted right after their text is extracted. "
             "On: the files are kept in data/uploads/<source>/ so DocKA can re-process them later."
         )
+    )
+
+    # Say exactly what will be stored, before anything is uploaded
+    stored_for = (
+        f"for **{duration_label}**, then deleted automatically"
+        if duration_label else "until you remove this source"
+    )
+    files_note = (
+        "Original files are **kept** for the same period."
+        if keep_files else "Original files are **not kept**."
+    )
+    st.info(
+        f"DocKA will store the extracted text (needed for search) {stored_for}. {files_note}"
     )
 
     # --- File uploader -------------------------------------------------------
@@ -376,6 +431,9 @@ with tab_upload:
                     "stored_root": dest_dir,
                 }
 
+            # Expiry is computed at ingestion time, not when the page loaded
+            ingest_kwargs["expires_at"] = expiry_for(duration_label)
+
             # Run ingestion pipeline
             with st.spinner(f"Ingesting documents into source `{final_source}`..."):
                 try:
@@ -393,7 +451,15 @@ with tab_upload:
                     if keep_files:
                         st.caption(f"🗂️ Original files kept in `data/uploads/{dest_dir.name}/`.")
                     else:
-                        st.caption("🔒 Original files were not kept — only the extracted text is stored.")
+                        st.caption("🔒 Original files were not kept.")
+
+                    if ingest_kwargs["expires_at"]:
+                        st.caption(
+                            f"⏳ Searchable until {ingest_kwargs['expires_at']:%Y-%m-%d %H:%M} UTC, "
+                            "then deleted automatically."
+                        )
+                    else:
+                        st.caption("♾️ Searchable until you remove this source.")
 
                     # Prompt user to refresh sidebar
                     st.info(
