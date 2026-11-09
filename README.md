@@ -153,6 +153,18 @@ It is built exclusively on **synthetic patient data**.
 | Airflow scheduling | ✅ | CeleryExecutor, DAG-based ingestion |
 | Unit tests | ✅ | 32 tests — core, normalizer, extractors |
 
+### 🔄 In progress — Phase 2 (Semantic Search)
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Document chunking | ✅ | 500-token chunks, 50 overlap, measured with the `multilingual-e5-base` tokenizer |
+| Chunks in PostgreSQL | ✅ | Chunk text + character offsets (citation anchors for Phase 3) |
+| Upload lifetime | ✅ | Temporary (1 h / 24 h / 7 days, default) or until removed — expired content leaves search on time and is purged |
+| Keep original files | ✅ | Per-upload choice, off by default |
+| Remove a source | ✅ | Search index + database (incl. chunks) + kept files |
+| Unit tests | ✅ | 74 tests |
+| Embeddings · hybrid search · NDCG@10 | ⬜ | Milestones 2–4 |
+
 ---
 
 ## 📚 A Documented Learning Journey
@@ -264,6 +276,10 @@ docka/
 │   │   │   ├── checksum.py
 │   │   │   ├── loader.py
 │   │   │   ├── normalizer.py
+│   │   │   ├── tokenizer.py      # embedding model tokenizer (token offsets)
+│   │   │   ├── chunker.py        # token-bounded sliding-window chunks
+│   │   │   ├── storage.py        # upload folders (kept files)
+│   │   │   ├── retention.py      # temporary upload lifetimes
 │   │   │   ├── repository.py
 │   │   │   └── es_repository.py
 │   │   ├── extractors/           # Format-specific extractors
@@ -274,17 +290,23 @@ docka/
 │   │   ├── pipelines/            # Framework-agnostic orchestration
 │   │   │   ├── ingest_folder.py
 │   │   │   ├── ingest_postgres.py
-│   │   │   └── ingest_elasticsearch.py
+│   │   │   ├── ingest_chunks.py
+│   │   │   ├── ingest_elasticsearch.py
+│   │   │   ├── remove_source.py
+│   │   │   └── purge_expired.py
 │   │   ├── mappings/             # Elasticsearch index mapping (docs_v1.json)
 │   │   └── airflow/              # Airflow adapter (DAGs only)
-│   │       └── dags/
+│   │       └── dags/             # ingest_documents, purge_expired
 │   ├── app/
 │   │   ├── backend_api/          # FastAPI — search endpoint
 │   │   │   ├── routers/
 │   │   │   └── services/
 │   │   └── frontend/             # Streamlit UI
-│   └── tests/
-│       └── test_core.py          # Unit tests (32 tests)
+│   └── tests/                    # Unit tests (74 tests)
+│       ├── test_core.py          # checksum, normalizer, language, extractors
+│       ├── test_chunker.py       # chunking
+│       ├── test_storage.py       # upload folders
+│       └── test_retention.py     # upload lifetimes
 │
 ├── verticals/                    # 🧩 Domain-specific layers built on core
 │   ├── clinical/                 # DocKA Clinical (in development)
