@@ -13,7 +13,7 @@ These tests require no database, no Elasticsearch, no Docker.
 They test pure Python functions in complete isolation.
 
 Run with:
-    pytest tests/test_core.py -v
+    pytest core/tests/test_core.py -v   (or just `pytest` from the repo root)
 """
 
 import pytest

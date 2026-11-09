@@ -25,9 +25,13 @@ import psycopg2
 
 # ---------------------------------------------------------------------------
 # Path setup
-# Makes DocKA packages importable when running outside Docker
+# Makes DocKA packages importable when running outside Docker.
+# Resolves the directory that contains `app/` and `ingestion/` from this
+# file's location (app/frontend/app_main.py → two levels up):
+# - locally : <repo>/core
+# - Docker  : /app
 # ---------------------------------------------------------------------------
-sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ingestion.pipelines.ingest_folder import ingest_folder
 
