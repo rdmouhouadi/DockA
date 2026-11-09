@@ -192,6 +192,7 @@ core/ingestion/
 └── airflow/                 # 🔵 Infrastructure adapter
     ├── dags/
     │   ├── ingest_documents.py      # filesystem ingestion DAG
+    │   ├── purge_expired.py         # deletes expired temporary uploads (every 15 min)
     │   └── ingest_web_source.py     # web ingestion DAG (Phase 4)
     └── README.md
 ```
@@ -369,6 +370,10 @@ Its only role is to:
 
 - **`ingest_documents.py`** — Scheduled filesystem ingestion.
   Triggers `ingest_folder(path, source)` on the configured data directory.
+- **`purge_expired.py`** (`docka_purge_expired`) — Every 15 minutes.
+  Calls `purge_expired()`: deletes temporary uploads past their `expires_at`
+  from Elasticsearch, PostgreSQL (chunks cascade) and kept files.
+  Active on creation (`is_paused_upon_creation=False`).
 
 ### Planned DAGs (Phase 4)
 

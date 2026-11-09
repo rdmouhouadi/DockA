@@ -165,7 +165,8 @@ Interactive documentation is available at `http://localhost:8000/docs`.
 
 **Responsibilities:**
 - Submit queries and display ranked results with snippets
-- Upload documents (single file, multiple files, ZIP), with a per-upload choice to keep the originals
+- Upload documents (single file, multiple files, ZIP), with per-upload choices:
+  how long they stay searchable (temporary or until removed) and whether the originals are kept
 - Display ingested source tags, document counts and file retention
 - Remove a source (search index, PostgreSQL, kept files)
 - System health check

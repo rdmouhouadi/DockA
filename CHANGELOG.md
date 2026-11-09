@@ -17,10 +17,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - 15 chunker unit tests (47 tests total)
 
 ### Added — Data Control
+- Upload tab: **Searchable — Temporary / Until I remove it** — per upload, Temporary by default (1 hour / 24 hours / 7 days); an info line states exactly what is stored and for how long
+- `documents.expires_at` + `expires_at` in the Elasticsearch mapping; `/search` excludes expired documents
+- `docka_purge_expired` DAG (every 15 min) — deletes expired uploads from Elasticsearch, PostgreSQL and kept files (`purge_expired.py`)
+- `retention.py` — durations, expiry and "only extend" merge rule; 14 unit tests (74 tests total)
+- `ensure_index()` adds new mapping fields to an existing index
 - Upload tab: **Keep a copy of the original files** — per upload, off by default; not-kept uploads are ingested from a temp folder and deleted
 - `documents.file_retained` column (added in place by `ensure_schema()`); sidebar shows `files kept` / `text only`
 - **Remove a source** — deletes it from Elasticsearch, PostgreSQL (chunks cascade) and its kept files (`remove_source.py`)
-- `storage.py` — validated upload folder per source tag; 13 unit tests (60 tests total)
+- `storage.py` — validated upload folder per source tag; 13 unit tests
 - `ui` service mounts `../data:/data` so kept uploads survive rebuilds
 
 ### Fixed

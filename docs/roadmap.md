@@ -404,7 +404,11 @@ DocKA's promise: *you decide what is stored and what is searchable.*
 
 | Task | Status | Notes |
 |------|--------|-------|
+| Searchable lifetime — per-upload choice | ✅ | Temporary by default (1 h / 24 h / 7 days) or until removed |
+| Expired content hidden from search on time | ✅ | `expires_at` filter in `/search` |
+| Automatic purge of expired uploads | ✅ | `docka_purge_expired` DAG, every 15 minutes |
 | Keep original files — per-upload choice | ✅ | Off by default; kept files in `data/uploads/<source>/` |
+| UI states what will be stored, before upload | ✅ | Text, files, and for how long |
 | `file_retained` recorded per document | ✅ | Sidebar shows `files kept` / `text only` |
 | Remove a source | ✅ | Search index + PostgreSQL (chunks cascade) + kept files |
 | Source tag validation | ✅ | Tags cannot escape `data/uploads/` |
@@ -414,7 +418,7 @@ DocKA's promise: *you decide what is stored and what is searchable.*
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Unit tests — core modules | ✅ | 60 tests passing — `pytest` |
+| Unit tests — core modules | ✅ | 74 tests passing — `pytest` |
 | Integration tests — API endpoints | ⬜ | Phase 2 |
 | Search quality tests | ⬜ | Phase 2 evaluation |
 | RAG evaluation | ⬜ | Phase 3 (RAGAS) |

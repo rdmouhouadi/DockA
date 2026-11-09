@@ -98,6 +98,7 @@ The heart of DocKA. Pure Python, no framework dependencies.
 | `checksum.py` | Computes SHA-256 content hashes for idempotency |
 | `normalizer.py` | Cleans extracted text (whitespace, control chars, page numbers) |
 | `storage.py` | Upload folder per source (validated) and recorded path for files not kept |
+| `retention.py` | Temporary upload durations, expiry computation and merge rule (pure logic) |
 | `tokenizer.py` | Embedding model tokenizer — token count and char offsets per token |
 | `chunker.py` | Splits text into overlapping, token-bounded chunks (pure logic) |
 | `repository.py` | PostgreSQL interactions (documents and chunks: insert, existence checks) |
@@ -127,6 +128,7 @@ Thin orchestration layer. Assembles core modules into reusable workflows.
 | `ingest_postgres.py` | Persists one document to PostgreSQL |
 | `ingest_chunks.py` | Chunks one document and persists its chunks to PostgreSQL |
 | `remove_source.py` | Removes a source from Elasticsearch, PostgreSQL and kept files |
+| `purge_expired.py` | Deletes expired temporary uploads everywhere (run by the `docka_purge_expired` DAG) |
 | `ingest_elasticsearch.py` | Indexes one document into Elasticsearch |
 
 Each sub-pipeline handles **one document, one destination**.
@@ -160,20 +162,36 @@ Streamlit application providing a human-facing interface.
 **Features:**
 - Keyword search with highlighted snippets and relevance scores
 - File upload (single, multiple, ZIP) with source tagging
+- **Searchable: Temporary / Until I remove it** — per upload, **Temporary by default** (1 hour / 24 hours / 7 days)
 - **Keep a copy of the original files** — per upload, **off by default**
-- Sidebar showing ingested source tags, document counts and whether files are kept (`files kept` / `text only`)
+- An info line stating exactly what will be stored, and for how long, before ingestion
+- Sidebar showing ingested source tags, document counts, file retention (`files kept` / `text only`)
+  and lifetime (`expires in …` / `until removed`)
 - **Remove a source** — deletes it from search, PostgreSQL (incl. chunks) and its kept files
 - System health check
 
-**Upload retention:**
+**Upload retention — two independent choices:**
 
-| Choice | What happens | What remains |
-|--------|--------------|--------------|
-| Keep off (default) | Files are ingested from a temporary folder, then deleted | Extracted text: chunks in PostgreSQL + search index; `file_retained = FALSE` |
-| Keep on | Files copied to `data/uploads/<source>/`, then ingested | Original files + extracted text; `file_retained = TRUE` |
+Searching requires storing the extracted text (chunks in PostgreSQL + search index).
+The user decides how long that lasts, and separately whether the original files are kept.
 
-Because chunk text lives in PostgreSQL, a document stays searchable and the index stays
-rebuildable even when its original file was not kept.
+| Searchable | Keep files | Stored | Until |
+|------------|-----------|--------|-------|
+| Temporary (default) | Off (default) | Extracted text | `expires_at`, then purged everywhere |
+| Temporary | On | Extracted text + files in `data/uploads/<source>/` | `expires_at`, then purged everywhere |
+| Until I remove it | Off | Extracted text | Source removed |
+| Until I remove it | On | Extracted text + files | Source removed |
+
+**Expiry enforcement** (`retention.py`, `pipelines/purge_expired.py`):
+- `/search` excludes documents whose `expires_at` has passed — content stops being
+  searchable **on time**, independent of the purge schedule
+- The `docka_purge_expired` DAG runs every 15 minutes and deletes expired documents from
+  Elasticsearch, PostgreSQL (chunks cascade) and their kept files; it is active on creation,
+  so the promise never depends on someone unpausing a DAG
+- Re-uploading known content can only **extend** retention, never shorten it
+
+Because chunk text lives in PostgreSQL, the index stays rebuildable even when an original
+file was not kept.
 Source tags become folder names, so `storage.source_upload_dir()` rejects tags that would
 escape `data/uploads/` (e.g. `../x`).
 
@@ -283,6 +301,7 @@ CREATE TABLE documents (
     language   TEXT,                      -- detected language code ('fr', 'en', ...)
     checksum   TEXT UNIQUE NOT NULL,      -- SHA-256 hash (idempotency key)
     file_retained BOOLEAN NOT NULL DEFAULT TRUE,  -- FALSE: upload's original file not kept
+    expires_at TIMESTAMPTZ,                       -- temporary uploads: purged after this (NULL = until removed)
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now()
 );
