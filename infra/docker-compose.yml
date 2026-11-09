@@ -120,17 +120,20 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ""
 
   volumes:
+    # Host sources live under core/ (core + verticals monorepo layout).
+    # Container paths are unchanged, so PYTHONPATH and imports stay the same.
+
     # DAG files — ingestion pipeline definitions
-    - ../ingestion/airflow/dags:/opt/airflow/dags
+    - ../core/ingestion/airflow/dags:/opt/airflow/dags
 
     # Optional Airflow plugins
-    - ../ingestion/airflow/plugins:/opt/airflow/plugins
+    - ../core/ingestion/airflow/plugins:/opt/airflow/plugins
 
     # ingestion domain package (importable as `ingestion.*` in DAG code)
-    - ../ingestion:/opt/airflow/ingestion
+    - ../core/ingestion:/opt/airflow/ingestion
 
     # App code — DocKA Core (importable as `app.*` in DAG code)
-    - ../app:/opt/airflow/app
+    - ../core/app:/opt/airflow/app
 
     # Raw documents for ingestion pipelines
     - ../data:/data
