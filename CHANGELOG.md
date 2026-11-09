@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Repository restructured as **core + verticals** monorepo:
+  `Ingestion/` → `core/ingestion/`, `app/` → `core/app/`, `tests/` → `core/tests/`
+- `ingestion` package folder lowercased to match imports (fixes case-sensitive imports on Linux/Docker)
+- Compose split into `docker-compose.core.yml`, `docker-compose.clinical.yml` and a full-stack `docker-compose.yml` (shared via `include:`)
+- `env.example` renamed to `.env.example`
+- Roadmap replaced with the core + verticals plan (Phase 2, Phase 3, DocKA Clinical)
+
+### Added
+- `verticals/clinical/` and `verticals/utility/` skeletons
+- `core.Dockerfile` base image and `clinical.Dockerfile` / `utility.Dockerfile` stubs
+- Neo4j service for DocKA Clinical, with `NEO4J_USER` / `NEO4J_PASSWORD` in `.env.example`
+
+### Removed
+- Accidentally committed `__pycache__` bytecode files
+
+---
+
 ## [v0.1.0] — 2026-03-01
 
 ### 🎉 First Release — Phase 1 POC Complete
