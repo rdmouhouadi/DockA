@@ -520,7 +520,7 @@ Two requirements files drift apart. Every package imported by `core/ingestion` m
 
 **When:** Phase 2 M1 — preparing an Elasticsearch index rebuild
 **Severity:** High — uploaded documents could not be re-indexed or chunked
-**Status:** Open — design decision pending (optional file retention per upload)
+**Status:** Resolved — per-upload "keep files" choice
 
 **What happened:**
 The `ui` service has no volume, so files uploaded through Streamlit were stored only inside
@@ -533,9 +533,44 @@ Applied the new Elasticsearch mapping with an in-place reindex
 (copy to a temporary index → recreate with mapping → copy back) instead of
 delete-and-re-ingest, so no uploaded document was lost.
 
+**Resolution:**
+Rather than silently keeping every upload, the user now chooses per upload
+(*Keep a copy of the original files*, off by default):
+- kept → stored in `data/uploads/<source>/` via a new `../data:/data` volume on the `ui` service
+- not kept → ingested from a temp folder and deleted; recorded with `file_retained = FALSE`
+
+Chunk text is stored in PostgreSQL, so even documents whose files were not kept remain
+searchable and the index stays rebuildable.
+The two documents uploaded before the fix were flagged `file_retained = FALSE`
+(their files no longer exist):
+```sql
+UPDATE documents SET file_retained = FALSE
+WHERE path LIKE '/data/uploads/%' AND file_retained;
+```
+
 **Lesson:**
 "Elasticsearch is disposable" only holds if the source content can be re-ingested.
 Verify where every input actually lives before deleting an index.
+
+---
+
+### ❌ UI Used Default Database Credentials
+
+**When:** Phase 2 — adding source removal to the UI
+**Severity:** High (latent) — UI uploads would fail as soon as `POSTGRES_PASSWORD` changed
+
+**What happened:**
+The `ui` service received only `API_BASE_URL`. Its ingestion code fell back to the
+hard-coded defaults (`docka` / `docka`), which only worked because the password had
+never been changed.
+
+**Resolution:**
+The `ui` service now receives `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`,
+`POSTGRES_PASSWORD` and `ELASTICSEARCH_HOST`, like the `api` service.
+
+**Lesson:**
+Every container that talks to a database needs its credentials passed explicitly.
+Code defaults hide misconfiguration until the first credential rotation.
 
 ---
 

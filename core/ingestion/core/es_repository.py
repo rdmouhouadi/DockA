@@ -76,3 +76,20 @@ def index_document(client: Elasticsearch, doc: dict):
             "created_at": doc.get("created_at")
         }
     )
+
+def delete_documents_by_source(client: Elasticsearch, source: str) -> int:
+    """
+    Remove every indexed document of a source tag.
+    refresh=True so the removal is visible to the very next search.
+
+    Returns the number of documents deleted (0 if the index does not exist).
+    """
+    if not client.indices.exists(index=INDEX_NAME):
+        return 0
+
+    resp = client.delete_by_query(
+        index=INDEX_NAME,
+        query={"term": {"source": source}},
+        refresh=True,
+    )
+    return resp["deleted"]

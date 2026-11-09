@@ -165,9 +165,17 @@ Interactive documentation is available at `http://localhost:8000/docs`.
 
 **Responsibilities:**
 - Submit queries and display ranked results with snippets
-- Upload documents (single file, multiple files, ZIP)
-- Display ingested source tags and document counts
+- Upload documents (single file, multiple files, ZIP), with a per-upload choice to keep the originals
+- Display ingested source tags, document counts and file retention
+- Remove a source (search index, PostgreSQL, kept files)
 - System health check
+
+**Volume:** `../data:/data` — uploads the user chooses to keep are stored in
+`data/uploads/<source>/` on the host and survive rebuilds. Uploads that are not kept
+never reach this folder.
+
+**Environment:** receives `POSTGRES_*` and `ELASTICSEARCH_HOST`, because it runs
+ingestion and source removal itself.
 
 The UI calls the ingestion pipeline **directly** for user uploads,
 bypassing Airflow for immediate feedback.

@@ -510,8 +510,21 @@ services:
       - "8501:8501"
     restart: unless-stopped
 
+    # The UI runs ingestion directly for uploads and can remove sources,
+    # so it needs the same database / search settings as the API.
     environment:
       API_BASE_URL: ${API_BASE_URL}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: docka_app
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST}
+
+    volumes:
+      # Host data/ folder — uploads the user chooses to KEEP are stored in
+      # data/uploads/<source>/ and survive container rebuilds.
+      # Uploads that are not kept never reach this folder.
+      - ../data:/data
 
     depends_on:
       - api

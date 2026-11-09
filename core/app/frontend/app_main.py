@@ -4,7 +4,8 @@ DocKA — Streamlit Frontend
 Provides:
 - BM25 keyword search over indexed documents
 - File/folder upload with source tagging
-- Ingested sources overview in sidebar
+- Per-upload choice to keep the original files or not (off by default)
+- Ingested sources overview in sidebar, with source removal
 
 Upload modes supported:
 - Single file (PDF, DOCX, TXT, HTML)
@@ -34,12 +35,14 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ingestion.pipelines.ingest_folder import ingest_folder
+from ingestion.pipelines.remove_source import remove_source
+from ingestion.core.storage import UPLOAD_DIR, source_upload_dir
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
-UPLOAD_DIR = Path("/data/uploads")
+# UPLOAD_DIR (data/uploads, mounted from the host) is defined in storage.py
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".html", ".txt"}
@@ -68,21 +71,27 @@ def get_pg_conn():
 
 def get_ingested_sources() -> list[dict]:
     """
-    Fetch distinct source tags and document counts from PostgreSQL.
-    Used to populate the sidebar sources list.
+    Fetch distinct source tags, document counts and file retention from
+    PostgreSQL. Used to populate the sidebar sources list.
+
+    files_kept is True only if the original files of ALL the source's
+    documents are kept on disk.
     """
     try:
         conn = get_pg_conn()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT source, COUNT(*) as doc_count
+                SELECT source, COUNT(*) AS doc_count, BOOL_AND(file_retained) AS files_kept
                 FROM documents
                 GROUP BY source
                 ORDER BY source
             """)
             rows = cur.fetchall()
         conn.close()
-        return [{"source": row[0], "count": row[1]} for row in rows]
+        return [
+            {"source": row[0], "count": row[1], "files_kept": row[2]}
+            for row in rows
+        ]
     except Exception:
         return []
 
@@ -93,13 +102,48 @@ def get_ingested_sources() -> list[dict]:
 with st.sidebar:
     st.header("📂 Ingested Sources")
 
+    # Confirmation from a source removal on the previous run
+    if "removal_message" in st.session_state:
+        st.success(st.session_state.pop("removal_message"))
+
     sources = get_ingested_sources()
 
     if not sources:
         st.caption("No sources ingested yet.")
     else:
         for s in sources:
-            st.markdown(f"• **{s['source']}** ({s['count']} docs)")
+            # Show whether DocKA still holds the original files or only text
+            retention = "🗂️ files kept" if s["files_kept"] else "🔒 text only"
+            st.markdown(f"• **{s['source']}** ({s['count']} docs) · {retention}")
+
+        # --- Remove a source ------------------------------------------------
+        # "You decide what's searchable": removing a source deletes it from
+        # the search index, PostgreSQL (incl. chunks) and any kept files.
+        with st.expander("🗑️ Remove a source"):
+            source_to_remove = st.selectbox(
+                "Source",
+                [s["source"] for s in sources],
+                label_visibility="collapsed",
+            )
+            st.caption(
+                "Deletes its documents from search and from the database, "
+                "and its kept files in data/uploads/. Folders ingested by Airflow "
+                "(e.g. data/samples/) are not deleted and will be re-ingested on the next run."
+            )
+            confirm_remove = st.checkbox(f"Yes, remove `{source_to_remove}`")
+
+            if st.button("Remove source", disabled=not confirm_remove, type="primary"):
+                try:
+                    result = remove_source(source_to_remove)
+                    # Shown after the rerun (a message rendered now would be lost)
+                    st.session_state["removal_message"] = (
+                        f"Removed `{source_to_remove}`: "
+                        f"{result['pg_deleted']} documents"
+                        + (", kept files deleted" if result["files_deleted"] else "")
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Removal failed: {e}")
 
     st.divider()
 
@@ -234,6 +278,21 @@ with tab_upload:
         )
     )
 
+    # --- Keep original files? -----------------------------------------------
+    # Off by default: DocKA stores only what the user explicitly chooses.
+    # Off → files are processed from a temporary folder and deleted afterwards;
+    #       the extracted text stays searchable (chunks + search index).
+    # On  → originals are kept in data/uploads/<source>/ so they can be
+    #       re-ingested later (e.g. re-chunked or re-embedded).
+    keep_files = st.checkbox(
+        "Keep a copy of the original files",
+        value=False,
+        help=(
+            "Off: only the extracted text is stored — the files are deleted after ingestion. "
+            "On: the files are kept in data/uploads/<source>/ so DocKA can re-process them later."
+        )
+    )
+
     # --- File uploader -------------------------------------------------------
     uploaded_files = st.file_uploader(
         label="Choose files",
@@ -281,29 +340,60 @@ with tab_upload:
             else:
                 final_source = "upload"
 
-            # Copy staged files to permanent upload directory
-            dest_dir = UPLOAD_DIR / final_source
-            dest_dir.mkdir(parents=True, exist_ok=True)
+            # Validate the source tag — it becomes a folder name under
+            # data/uploads/ (also recorded as the logical path when not kept)
+            try:
+                dest_dir = source_upload_dir(final_source)
+            except ValueError as e:
+                st.error(f"Invalid source tag: {e}")
+                st.stop()
 
+            # Gather supported files into one flat batch folder
+            # (ZIP archives may contain other file types or nested folders)
+            batch_dir = staging_path / "_batch"
+            batch_dir.mkdir()
             for file in staging_path.rglob("*"):
-                if file.is_file() and file.suffix.lower() in SUPPORTED_EXTENSIONS:
+                if (
+                    file.is_file()
+                    and batch_dir not in file.parents
+                    and file.suffix.lower() in SUPPORTED_EXTENSIONS
+                ):
+                    shutil.copy2(file, batch_dir / file.name)
+
+            if keep_files:
+                # Keep originals: copy to data/uploads/<source>/ and ingest there
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for file in batch_dir.iterdir():
                     shutil.copy2(file, dest_dir / file.name)
+                ingest_kwargs = {"root_path": dest_dir, "file_retained": True}
+            else:
+                # Do not keep: ingest straight from the temp folder, which is
+                # deleted when this block exits. Recorded paths point to the
+                # logical upload location, flagged file_retained = False.
+                ingest_kwargs = {
+                    "root_path": batch_dir,
+                    "file_retained": False,
+                    "stored_root": dest_dir,
+                }
 
             # Run ingestion pipeline
             with st.spinner(f"Ingesting documents into source `{final_source}`..."):
                 try:
-                    summary = ingest_folder(
-                        root_path=dest_dir,
-                        source=final_source
-                    )
+                    summary = ingest_folder(source=final_source, **ingest_kwargs)
 
                     st.success(
                         f"✅ Ingestion complete for source `{final_source}`"
                     )
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Ingested", summary["ingested"])
                     col2.metric("Skipped", summary["skipped"])
                     col3.metric("Failed", summary["failed"])
+                    col4.metric("Chunks", summary["chunks"])
+
+                    if keep_files:
+                        st.caption(f"🗂️ Original files kept in `data/uploads/{dest_dir.name}/`.")
+                    else:
+                        st.caption("🔒 Original files were not kept — only the extracted text is stored.")
 
                     # Prompt user to refresh sidebar
                     st.info(

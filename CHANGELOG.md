@@ -12,11 +12,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Added — Phase 2 · M1 Document Chunking
 - `tokenizer.py` — `multilingual-e5-base` tokenizer (transformers, no PyTorch) with per-token char offsets
 - `chunker.py` — sliding-window chunker, 500 tokens / 50 overlap (`CHUNK_MAX_TOKENS`, `CHUNK_OVERLAP_TOKENS`)
-- `chunks` table in PostgreSQL, created idempotently by `ensure_chunks_table()`
+- `chunks` table in PostgreSQL, created idempotently by `ensure_schema()`
 - `ingest_chunks.py` — chunking step in `ingest_folder`; re-runs backfill documents ingested earlier
 - 15 chunker unit tests (47 tests total)
 
+### Added — Data Control
+- Upload tab: **Keep a copy of the original files** — per upload, off by default; not-kept uploads are ingested from a temp folder and deleted
+- `documents.file_retained` column (added in place by `ensure_schema()`); sidebar shows `files kept` / `text only`
+- **Remove a source** — deletes it from Elasticsearch, PostgreSQL (chunks cascade) and its kept files (`remove_source.py`)
+- `storage.py` — validated upload folder per source tag; 13 unit tests (60 tests total)
+- `ui` service mounts `../data:/data` so kept uploads survive rebuilds
+
 ### Fixed
+- Source tags could escape `data/uploads/` (e.g. `../x`) — now rejected
+- `ui` service used default database credentials — now receives `POSTGRES_*` / `ELASTICSEARCH_HOST`
+- Hidden files such as `.gitkeep` were reported as failed documents
 - Elasticsearch mapping `docs_v1.json` was never applied — now shipped in `core/ingestion/mappings/` and loaded by `ensure_index()`; `checksum` is an indexed keyword
 - `doc_id` changed on every ingestion run for already-ingested documents — now reused by checksum
 - Airflow DAG import error: `python-docx` missing from the Airflow image

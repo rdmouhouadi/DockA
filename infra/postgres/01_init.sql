@@ -22,6 +22,8 @@ CREATE TABLE documents (
     title TEXT,
     language TEXT,
     checksum TEXT UNIQUE NOT NULL,
+    -- FALSE when an upload's original file was not kept (only extracted text remains)
+    file_retained BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now()
 );
@@ -30,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_checksum ON documents(checksum);
 CREATE INDEX IF NOT EXISTS idx_documents_doc_id ON documents(doc_id);
 -- Chunks — Phase 2 (token-bounded passages of each document)
 -- Same DDL as CHUNKS_DDL in core/ingestion/core/repository.py — keep in sync.
--- Existing databases get this table via ensure_chunks_table() at ingestion time.
+-- Existing databases get this table via ensure_schema() at ingestion time.
 CREATE TABLE IF NOT EXISTS chunks (
     id SERIAL PRIMARY KEY,
     chunk_id TEXT UNIQUE NOT NULL,

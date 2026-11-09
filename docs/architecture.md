@@ -97,6 +97,7 @@ The heart of DocKA. Pure Python, no framework dependencies.
 | `loader.py` | Scans directories and dispatches files to the correct extractor |
 | `checksum.py` | Computes SHA-256 content hashes for idempotency |
 | `normalizer.py` | Cleans extracted text (whitespace, control chars, page numbers) |
+| `storage.py` | Upload folder per source (validated) and recorded path for files not kept |
 | `tokenizer.py` | Embedding model tokenizer — token count and char offsets per token |
 | `chunker.py` | Splits text into overlapping, token-bounded chunks (pure logic) |
 | `repository.py` | PostgreSQL interactions (documents and chunks: insert, existence checks) |
@@ -125,6 +126,7 @@ Thin orchestration layer. Assembles core modules into reusable workflows.
 | `ingest_folder.py` | Scans a folder and ingests all supported documents |
 | `ingest_postgres.py` | Persists one document to PostgreSQL |
 | `ingest_chunks.py` | Chunks one document and persists its chunks to PostgreSQL |
+| `remove_source.py` | Removes a source from Elasticsearch, PostgreSQL and kept files |
 | `ingest_elasticsearch.py` | Indexes one document into Elasticsearch |
 
 Each sub-pipeline handles **one document, one destination**.
@@ -158,8 +160,26 @@ Streamlit application providing a human-facing interface.
 **Features:**
 - Keyword search with highlighted snippets and relevance scores
 - File upload (single, multiple, ZIP) with source tagging
-- Sidebar showing ingested source tags and document counts
+- **Keep a copy of the original files** — per upload, **off by default**
+- Sidebar showing ingested source tags, document counts and whether files are kept (`files kept` / `text only`)
+- **Remove a source** — deletes it from search, PostgreSQL (incl. chunks) and its kept files
 - System health check
+
+**Upload retention:**
+
+| Choice | What happens | What remains |
+|--------|--------------|--------------|
+| Keep off (default) | Files are ingested from a temporary folder, then deleted | Extracted text: chunks in PostgreSQL + search index; `file_retained = FALSE` |
+| Keep on | Files copied to `data/uploads/<source>/`, then ingested | Original files + extracted text; `file_retained = TRUE` |
+
+Because chunk text lives in PostgreSQL, a document stays searchable and the index stays
+rebuildable even when its original file was not kept.
+Source tags become folder names, so `storage.source_upload_dir()` rejects tags that would
+escape `data/uploads/` (e.g. `../x`).
+
+**Source removal** (`pipelines/remove_source.py`): Elasticsearch first, then PostgreSQL
+(chunks cascade), then kept files — so a partial failure never leaves content searchable.
+Folders ingested by Airflow (`data/samples/`) are never deleted.
 
 **Architecture note:** The UI calls `ingest_folder()` directly for uploads,
 bypassing Airflow. This gives immediate feedback to the user.
@@ -262,6 +282,7 @@ CREATE TABLE documents (
     title      TEXT,                      -- document title (filename stem)
     language   TEXT,                      -- detected language code ('fr', 'en', ...)
     checksum   TEXT UNIQUE NOT NULL,      -- SHA-256 hash (idempotency key)
+    file_retained BOOLEAN NOT NULL DEFAULT TRUE,  -- FALSE: upload's original file not kept
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now()
 );
@@ -298,7 +319,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 - 50-token overlap so a sentence crossing a boundary is retrievable from either side
 - Chunk text is sliced from the document by character offsets — `start_char` / `end_char`
   become citation anchors in Phase 3
-- Created by `ensure_chunks_table()` at pipeline start, so existing databases need no volume reset
+- Created by `ensure_schema()` at pipeline start, so existing databases need no volume reset
 
 ### PostgreSQL — `docka_airflow`
 
