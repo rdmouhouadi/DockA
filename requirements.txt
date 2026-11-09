@@ -8,6 +8,9 @@ langdetect
 python-docx
 beautifulsoup4
 
+# --- Ingestion: chunking (embedding model tokenizer, no PyTorch) ---
+transformers==5.22.2
+
 # --- UI ---
 streamlit
 requests
