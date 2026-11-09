@@ -11,6 +11,7 @@ from ingestion.core.loader import load_file
 from ingestion.core.checksum import file_checksum
 from ingestion.core.es_repository import get_client, ensure_index
 from ingestion.core.normalizer import normalize_text
+from ingestion.core.repository import get_doc_id_by_checksum
 from ingestion.pipelines.ingest_postgres import ingest_document_postgres
 from ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
@@ -73,8 +74,12 @@ def ingest_folder(root_path: Path, source: str) -> dict:
             raw_content = load_file(path)
             content = normalize_text(raw_content)
 
+            # Reuse the doc_id of already-ingested content so every store
+            # (PostgreSQL, chunks, Elasticsearch) shares one stable id
+            doc_id = get_doc_id_by_checksum(conn, checksum) or str(uuid.uuid4())
+
             doc = {
-                "doc_id": str(uuid.uuid4()),
+                "doc_id": doc_id,
                 "source": source,
                 "path": str(path),
                 "title": path.stem,
