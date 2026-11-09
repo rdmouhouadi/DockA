@@ -3,17 +3,47 @@
 This document is the single source of truth for DocKA's development plan.  
 It tracks every phase, every task, and the current status of each.
 
-> **Legend:** ✅ Done · 🔄 In Progress · ⬜ Planned
+> **Legend:** ✅ Done · 🔄 In Progress · ⬜ Planned · 💤 Deferred
+
+---
+
+## Product Vision — Core + Verticals
+
+DocKA is a knowledge retrieval platform built as **one core platform** with
+**domain-specific verticals** on top. All of it lives in a single monorepo:
+
+- **`core/`** — domain-agnostic ingestion, search, RAG, API and UI
+- **`verticals/`** — domain extractors, pipelines and UIs built on the core
+
+| Vertical | Domain | Status |
+|----------|--------|--------|
+| **DocKA Clinical** | Patient history retrieval with a Neo4j timeline | 🔄 Next — Month 2 |
+| **DocKA Utility** | Smart metering asset history | ⬜ After DocKA Clinical |
+| **DocKA Aviation MRO** | Aircraft maintenance history | ⬜ Roadmap |
+| **DocKA Contracts** | Contract obligation retrieval | ⬜ Roadmap |
+
+### Timeline
+
+| Period | Scope | Release |
+|--------|-------|---------|
+| Done | Phase 1 — Keyword search POC | `v0.1.0` ✅ |
+| Month 1 | Phase 2 — Semantic search | `v0.2.0` |
+| Month 1 | Phase 3 — RAG with citations | `v0.3.0` |
+| Month 2 | DocKA Clinical vertical | `v0.4.0-clinical` |
 
 ---
 
 ## Table of Contents
 
 1. [Phase 1 — POC: Keyword Search](#phase-1--poc-keyword-search)
-2. [Phase 2 — Semantic Search](#phase-2--semantic-search)
-3. [Phase 3 — RAG](#phase-3--rag)
-4. [Phase 4 — Domain Portal](#phase-4--domain-portal)
-5. [Cross-Cutting Concerns](#cross-cutting-concerns)
+2. [Repository Restructure — Core + Verticals](#repository-restructure--core--verticals)
+3. [Phase 2 — Semantic Search](#phase-2--semantic-search)
+4. [Phase 3 — RAG with Citations](#phase-3--rag-with-citations)
+5. [DocKA Clinical — First Vertical](#docka-clinical--first-vertical)
+6. [Future Verticals](#future-verticals)
+7. [Deferred — Domain Portal](#deferred--domain-portal)
+8. [Locked Design Decisions](#locked-design-decisions)
+9. [Cross-Cutting Concerns](#cross-cutting-concerns)
 
 ---
 
@@ -128,10 +158,25 @@ It tracks every phase, every task, and the current status of each.
 
 ---
 
+## Repository Restructure — Core + Verticals
+
+**Goal:** Reorganise the repo so new domains are added as verticals on a shared core.  
+**Status:** ✅ Complete
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Move `Ingestion/`, `app/`, `tests/` into `core/` | ✅ | `ingestion` lowercased to match imports (Linux-safe) |
+| `verticals/clinical/` and `verticals/utility/` skeletons | ✅ | extractors, pipelines, ui (+ graph for clinical) |
+| `core.Dockerfile` base image | ✅ | Verticals build `FROM` core |
+| `clinical.Dockerfile` / `utility.Dockerfile` | ✅ | Stubs — dependencies added with each vertical |
+| Split compose: core / clinical / full stack | ✅ | Shared via `include:`, each service defined once |
+
+---
+
 ## Phase 2 — Semantic Search
 
 **Goal:** Add semantic understanding to search via embeddings and hybrid retrieval.  
-**Status:** ⬜ Planned
+**Status:** ⬜ Planned — Month 1 · Release `v0.2.0`
 
 **Why this matters:**  
 BM25 finds exact keyword matches. Semantic search finds conceptually related content.  
@@ -144,8 +189,8 @@ even if the exact words don't match.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Implement `app/common/chunking.py` | ⬜ | Sliding window with overlap |
-| Chunk size evaluation | ⬜ | Test 256, 512, 1024 tokens |
+| Implement chunking module in `core/ingestion/` | ⬜ | Sliding window, 512 tokens, with overlap |
+| Chunk size evaluation | ⬜ | Compare 256, 512, 1024 tokens |
 | Store chunks in PostgreSQL | ⬜ | New `chunks` table linked to `documents` |
 | Update ingestion pipeline to chunk | ⬜ | After normalization step |
 
@@ -155,7 +200,7 @@ even if the exact words don't match.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Select multilingual embedding model | ⬜ | `paraphrase-multilingual-mpnet-base-v2` (FR+EN) |
+| Multilingual embedding model | ⬜ | `paraphrase-multilingual-mpnet-base-v2` (FR + EN) |
 | Add `sentence-transformers` dependency | ⬜ | |
 | Embed chunks at ingestion time | ⬜ | Per-chunk embedding |
 | Store vectors in Elasticsearch | ⬜ | `dense_vector` field type |
@@ -166,8 +211,8 @@ even if the exact words don't match.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Vector search endpoint | ⬜ | kNN search in Elasticsearch |
-| Reciprocal Rank Fusion (RRF) | ⬜ | Combine BM25 + vector scores |
+| Vector search | ⬜ | kNN search in Elasticsearch |
+| Reciprocal Rank Fusion (RRF) | ⬜ | Combine BM25 + vector rankings |
 | `GET /search?mode=hybrid` | ⬜ | Extend existing search endpoint |
 | UI toggle: keyword vs hybrid | ⬜ | Streamlit radio button |
 
@@ -177,22 +222,24 @@ even if the exact words don't match.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Build evaluation dataset | ⬜ | 20-30 query/relevant-doc pairs |
-| Compute NDCG@10 for BM25 | ⬜ | Baseline from Phase 1 |
-| Compute NDCG@10 for hybrid | ⬜ | Compare against baseline |
+| Build evaluation dataset | ⬜ | 20–30 query / relevant-doc pairs |
+| NDCG@10 for BM25 | ⬜ | Phase 1 baseline |
+| NDCG@10 for hybrid | ⬜ | Compared against baseline |
 | Document results | ⬜ | In `docs/evaluation.md` |
+| Tag `v0.2.0` | ⬜ | |
 
 ---
 
-## Phase 3 — RAG
+## Phase 3 — RAG with Citations
 
 **Goal:** Answer questions with cited, verifiable responses grounded in the knowledge base.  
-**Status:** ⬜ Planned
+**Status:** ⬜ Planned — Month 1 · Release `v0.3.0`
 
 **Why this matters:**  
 Search returns documents. RAG returns answers.  
 A user asking "how do I pair the iOTR device?" should get a direct answer  
-with a citation pointing to the exact document and passage.
+with a citation pointing to the exact document and passage — and an explicit
+"not found" when the knowledge base does not contain the answer.
 
 ---
 
@@ -200,11 +247,11 @@ with a citation pointing to the exact document and passage.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Select LLM (local or API) | ⬜ | Ollama (local) or OpenAI API |
-| Implement retrieval → prompt → generate | ⬜ | LangChain or direct API |
-| Citation extraction | ⬜ | Link answers to source documents |
+| Local LLM via Ollama | ⬜ | Runs on-premise — no data leaves the machine |
+| Retrieval → prompt → generate | ⬜ | Built on Phase 2 hybrid retrieval |
+| Citation on every claim | ⬜ | Each statement linked to its source document |
+| "Not found in the record" guardrail | ⬜ | Answer explicitly absent instead of hallucinating |
 | `POST /ask` endpoint | ⬜ | Question → answer + sources |
-| Streaming responses | ⬜ | Server-Sent Events |
 
 ---
 
@@ -213,74 +260,121 @@ with a citation pointing to the exact document and passage.
 | Task | Status | Notes |
 |------|--------|-------|
 | RAGAS evaluation | ⬜ | Faithfulness + answer relevance |
-| Hallucination detection | ⬜ | Flag answers not grounded in sources |
+| "Not found" accuracy | ⬜ | Questions with no answer in the corpus |
 | Document results | ⬜ | In `docs/evaluation.md` |
+| Tag `v0.3.0` | ⬜ | |
 
 ---
 
-### M3 — Observability ⬜
+### M3 — Stretch Goals ⬜
+
+Previously planned for Phase 3; picked up if time allows.
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Langfuse tracing integration | ⬜ | Trace retrieval + generation steps |
+| Streaming responses | ⬜ | Server-Sent Events |
+| Langfuse tracing | ⬜ | Trace retrieval + generation steps |
 | Latency monitoring | ⬜ | Per-step timing |
 | User feedback collection | ⬜ | Thumbs up/down per answer |
 
 ---
 
-## Phase 4 — Domain Portal
+## DocKA Clinical — First Vertical
 
-**Goal:** Allow users to select a domain, trigger web-based corpus acquisition,  
-and search over automatically fetched knowledge.  
-**Status:** ⬜ Planned
+**Goal:** Retrieve a patient's history across clinical documents, with a traversable
+timeline graph and cited answers.  
+**Status:** ⬜ Planned — Month 2 · Release `v0.4.0-clinical`  
+**Location:** `verticals/clinical/` · `infra/docker/clinical.Dockerfile` · `infra/docker-compose.clinical.yml`
 
-**Why this matters:**  
-This is the "domain knowledge acquisition" vision realized.  
-A user selects "Healthcare" → DocKA fetches PubMed abstracts →  
-builds the corpus → enables search and RAG over clinical literature.
-
----
-
-### M1 — Web Source Ingestion ⬜
-
-| Task | Status | Notes |
-|------|--------|-------|
-| `Ingestion/sources/pubmed.py` | ⬜ | PubMed E-utilities API |
-| `Ingestion/sources/web_crawler.py` | ⬜ | Generic URL fetcher |
-| `ingest_web_source.py` pipeline | ⬜ | Fetch → normalize → ingest |
-| Airflow DAG for web ingestion | ⬜ | Parameterized: domain + query |
+> **Synthetic data only.** Real patient data is never used.  
+> **Text only** for the POC — no voice interface.
 
 ---
 
-### M2 — Domain Configuration ⬜
+### Week 1 — Synthetic Data ⬜
 
 | Task | Status | Notes |
 |------|--------|-------|
-| `domains` table in PostgreSQL | ⬜ | name, description, fetch_config (JSONB) |
-| Pre-configured domains | ⬜ | Healthcare (PubMed), Telecom (smart metering) |
-| Custom domain support | ⬜ | User-defined fetch config |
+| Generate synthetic patients | ⬜ | Synthea |
+| Render French clinical documents | ⬜ | Referral letters, lab reports, discharge summaries |
+| Scanned-image variants | ⬜ | Exercises the OCR path |
 
 ---
 
-### M3 — Healthcare Demo Corpus ⬜
+### Week 2 — Medical NLP + Neo4j Graph ⬜
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Fetch 1000-5000 PubMed abstracts | ⬜ | Cardiology or oncology domain |
-| French clinical guidelines (HAS) | ⬜ | haute-autorité-de-santé.fr |
-| Multilingual corpus (FR + EN) | ⬜ | Language detection already in place |
-| Pre-loaded in demo environment | ⬜ | Ready for a Demo |
+| Clinical entity extraction | ⬜ | Diagnoses, medications, lab results, dates, allergies |
+| OCR for scanned documents | ⬜ | `verticals/clinical/extractors/` |
+| Neo4j graph schema | ⬜ | Nodes: Patient, Encounter, Medication, LabResult, Diagnosis, Allergy |
+| Graph relationships | ⬜ | `HAS_LAB`, `PRESCRIBED`, `DIAGNOSED_WITH`, `ON_DATE` |
+| Patient timeline as a traversable graph | ⬜ | `verticals/clinical/graph/` |
 
 ---
 
-### M4 — Domain Portal UI ⬜
+### Week 3 — Retrieval over Graph + Documents ⬜
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Domain selector in Streamlit | ⬜ | Healthcare · Telecom · Custom |
-| Pipeline trigger from UI | ⬜ | Button → Airflow DAG trigger via API |
-| Corpus status display | ⬜ | Document count, last updated |
-| Domain switching | ⬜ | Search scoped to selected domain |
+| Queries combining Neo4j timeline + DocKA retrieval | ⬜ | Graph traversal + document passages |
+| Citations on every answer | ⬜ | Reuses Phase 3 citation pipeline |
+| Strict "not found" guardrail | ⬜ | No answer without a source |
+
+---
+
+### Week 4 — Demo + Evaluation ⬜
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Clinical Streamlit UI | ⬜ | Patient timeline view — `verticals/clinical/ui/` |
+| Evaluation | ⬜ | Accuracy, citation correctness, "not found" accuracy |
+| Demo video | ⬜ | 2 minutes |
+| Write-up | ⬜ | Project summary and results |
+| Tag `v0.4.0-clinical` | ⬜ | |
+
+---
+
+## Future Verticals
+
+| Vertical | Scope | Status |
+|----------|-------|--------|
+| **DocKA Utility** | Smart metering asset history — `verticals/utility/` | ⬜ After DocKA Clinical |
+| **DocKA Aviation MRO** | Aircraft maintenance history | ⬜ Roadmap |
+| **DocKA Contracts** | Contract obligation retrieval | ⬜ Roadmap |
+
+---
+
+## Deferred — Domain Portal
+
+**Status:** 💤 Deferred — superseded by the verticals strategy.  
+Kept here for reference: web-based corpus acquisition may return as a core feature later.
+
+| Milestone | Tasks |
+|-----------|-------|
+| Web Source Ingestion | `core/ingestion/sources/pubmed.py` (PubMed E-utilities), `web_crawler.py`, `ingest_web_source.py` pipeline, parameterised Airflow DAG |
+| Domain Configuration | `domains` table (name, description, `fetch_config` JSONB), pre-configured + custom domains |
+| Healthcare Demo Corpus | 1000–5000 PubMed abstracts, French HAS clinical guidelines, FR + EN corpus |
+| Domain Portal UI | Domain selector, pipeline trigger from UI, corpus status, domain-scoped search |
+
+---
+
+## Locked Design Decisions
+
+These are settled and should not be revisited without a strong reason.
+
+| Decision | Rationale |
+|----------|-----------|
+| Airflow 2.10.4 (not 3.x) | JWT bug between components in multi-container Docker |
+| Elasticsearch 8.12 + `elasticsearch==8.12.0` client | Client/server version match |
+| PostgreSQL = source of truth, Elasticsearch = disposable index | Index can always be rebuilt |
+| SHA-256 checksums | Idempotent ingestion |
+| AGPL-3.0 license | Modifications stay open source |
+| Monorepo — core + all verticals | Shared code, single CI, atomic changes |
+| Neo4j for the Clinical timeline | Patient history is naturally a graph |
+| Local LLM (Ollama) | No data leaves the machine |
+| Voice interface | Out of scope for the Clinical POC |
+| Kubernetes | Later — Docker Compose for now |
 
 ---
 
@@ -288,33 +382,35 @@ builds the corpus → enables search and RAG over clinical literature.
 
 These tasks apply across all phases.
 
-### Documentation ✅ / ⬜
+### Documentation
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Root `README.md` | ✅ | Vision, architecture, quick start, roadmap |
-| `docs/architecture.md` | ✅ | Full component and data flow documentation |
+| Root `README.md` | ✅ | Vision, architecture, verticals, quick start |
+| `docs/architecture.md` | ✅ | Components, data flow, repository layout |
 | `docs/roadmap.md` | ✅ | This document |
-| `docs/troubleshooting.md` | ⬜ | All errors encountered + resolutions |
-| `docs/learning-references.md` | ⬜ | Curated learning material per concept |
-| `Ingestion/README.md` | ⬜ | Updated with pivot + new milestones |
-| `infra/README.md` | ⬜ | Updated with two-DB design + domain portal |
-| `docs/evaluation.md` | ⬜ | Phase 2+ search quality metrics |
+| `docs/troubleshooting.md` | ✅ | All errors encountered + resolutions |
+| `docs/learning-references.md` | ✅ | Curated learning material per concept |
+| `core/ingestion/README.md` | ✅ | Ingestion architecture |
+| `infra/README.md` | ✅ | Two-DB design, compose stacks |
+| `docs/evaluation.md` | ⬜ | Phase 2+ search and RAG quality metrics |
 
-### Testing ✅ / ⬜
+### Testing
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Unit tests — core modules | ✅ | 32 tests passing |
+| Unit tests — core modules | ✅ | 32 tests passing — `pytest` |
 | Integration tests — API endpoints | ⬜ | Phase 2 |
 | Search quality tests | ⬜ | Phase 2 evaluation |
+| RAG evaluation | ⬜ | Phase 3 (RAGAS) |
+| Clinical evaluation | ⬜ | Accuracy, citations, "not found" |
 
-### GitHub ⬜
+### GitHub
 
 | Task | Status | Notes |
 |------|--------|-------|
-| `.gitignore` — clean repo | ⬜ | Exclude `.env`, `.venv`, `__pycache__`, `data/` |
-| `LICENSE` file — AGPL-3.0 | ⬜ | |
-| `.env.example` | ⬜ | Document all required variables |
-| `CHANGELOG.md` | ⬜ | v0.1.0 entry |
-| Tag `v0.1.0` and publish | ⬜ | After documentation complete |
+| `.gitignore` — clean repo | ✅ | `.env`, `.venv`, `__pycache__`, `data/`, local tool settings |
+| `LICENSE` file — AGPL-3.0 | ✅ | |
+| `.env.example` | ✅ | All required variables, incl. Neo4j |
+| `CHANGELOG.md` | ✅ | Updated per release |
+| Tag `v0.1.0` and publish | ✅ | |

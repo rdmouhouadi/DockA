@@ -62,12 +62,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 #
 # We copy only what the API needs:
-# - app/api
-# - app/common
+# - core/app/backend_api (source lives under core/ in the monorepo)
 #
+# Copied to /app/app/backend_api so the import path `app.backend_api.*`
+# is unchanged inside the container.
 # This keeps the image clean and focused.
 # ---------------------------------------------------------------------------
-COPY app/backend_api ./app/backend_api
+COPY core/app/backend_api ./app/backend_api
 
 # ---------------------------------------------------------------------------
 # Expose port

@@ -159,7 +159,7 @@ Future extensions (semantic search, RAG, web ingestion, agents) must:
 ## 🗂️ Folder Structure Overview
 
 ```bash
-Ingestion/
+core/ingestion/
 ├── README.md
 ├── __init__.py
 │
@@ -200,7 +200,7 @@ Ingestion/
 
 ## 🔴 Layer 1 — DocKA Core (Pure Logic)
 
-**Location:** `Ingestion/core/`
+**Location:** `core/ingestion/core/`
 
 This layer contains **pure, reusable ingestion logic**.
 It has **no knowledge of Airflow, scheduling, or infrastructure**.
@@ -251,7 +251,7 @@ It has **no knowledge of Airflow, scheduling, or infrastructure**.
 
 ## 🔴 Layer 2 — DocKA Core (Format-Specific Extraction)
 
-**Location:** `Ingestion/extractors/`
+**Location:** `core/ingestion/extractors/`
 
 This layer handles **how text is extracted**, not *when* or *why*.
 
@@ -295,7 +295,7 @@ and adding one line to the registry. The pipeline never changes.
 
 ## 🟡 Layer 3 — Pipelines (Thin Orchestration)
 
-**Location:** `Ingestion/pipelines/`
+**Location:** `core/ingestion/pipelines/`
 
 Pipelines assemble **core logic + extractors** into reusable workflows.
 They are framework-agnostic — callable from Airflow DAGs, CLI scripts,
@@ -354,7 +354,7 @@ ingest_folder.py          ← coordinator
 
 ## 🔵 Layer 4 — Airflow (Infrastructure Adapter)
 
-**Location:** `Ingestion/airflow/`
+**Location:** `core/ingestion/airflow/`
 
 This layer contains **no business logic**.
 
@@ -387,7 +387,7 @@ Its only role is to:
 
 ## 🟡 Layer 5 — Sources (Web Adapters) *(Phase 4)*
 
-**Location:** `Ingestion/sources/`
+**Location:** `core/ingestion/sources/`
 
 This layer will contain **web source adapters** for fetching documents
 from external APIs and websites.

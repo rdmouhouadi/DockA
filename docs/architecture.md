@@ -36,6 +36,21 @@ duplicate documents regardless of how many times the pipeline runs.
 
 ---
 
+## Repository Layout — Core + Verticals
+
+DocKA is a monorepo organised as **one core platform** with **domain verticals** on top.
+
+| Layer | Location | Contents |
+|-------|----------|----------|
+| Core | `core/` | Ingestion, search API, UI, tests — domain-agnostic |
+| Verticals | `verticals/<name>/` | Domain-specific extractors, pipelines, UI (e.g. `clinical/`, `utility/`) |
+| Infrastructure | `infra/` | Dockerfiles (core base image + one per vertical) and compose stacks |
+
+Verticals depend on core, never the other way round. Each vertical image is
+built `FROM` the core image, and each vertical compose file `include`s the core stack.
+
+---
+
 ## System Overview
 
 ```
@@ -73,7 +88,7 @@ duplicate documents regardless of how many times the pipeline runs.
 
 ## Component Breakdown
 
-### 🔴 Ingestion Core — `Ingestion/core/`
+### 🔴 Ingestion Core — `core/ingestion/core/`
 
 The heart of DocKA. Pure Python, no framework dependencies.
 
@@ -85,7 +100,7 @@ The heart of DocKA. Pure Python, no framework dependencies.
 | `repository.py` | PostgreSQL interactions (insert, existence checks) |
 | `es_repository.py` | Elasticsearch interactions (index creation, document indexing) |
 
-### 🔴 Extractors — `Ingestion/extractors/`
+### 🔴 Extractors — `core/ingestion/extractors/`
 
 Each extractor handles exactly one file format and returns clean text.
 
@@ -99,7 +114,7 @@ Each extractor handles exactly one file format and returns clean text.
 **Design rule:** Adding a new format requires only creating a new extractor file
 and registering it in `__init__.py`. The pipeline never changes.
 
-### 🟡 Pipelines — `Ingestion/pipelines/`
+### 🟡 Pipelines — `core/ingestion/pipelines/`
 
 Thin orchestration layer. Assembles core modules into reusable workflows.
 
@@ -112,7 +127,7 @@ Thin orchestration layer. Assembles core modules into reusable workflows.
 Each sub-pipeline handles **one document, one destination**.
 `ingest_folder.py` is a coordinator — it calls the others.
 
-### 🔵 Airflow — `Ingestion/airflow/`
+### 🔵 Airflow — `core/ingestion/airflow/`
 
 Infrastructure adapter only. Contains no business logic.
 
@@ -123,7 +138,7 @@ Airflow DAG
               └── calls ingest_document_elasticsearch(es_client, doc)
 ```
 
-### 🟢 API — `app/backend_api/`
+### 🟢 API — `core/app/backend_api/`
 
 FastAPI application exposing DocKA search capabilities over HTTP.
 
@@ -133,7 +148,7 @@ FastAPI application exposing DocKA search capabilities over HTTP.
 | `routers/search.py` | `GET /search` endpoint — validates input, calls service |
 | `services/retrieval.py` | BM25 query construction, Elasticsearch call, result formatting |
 
-### 🟢 UI — `app/frontend/`
+### 🟢 UI — `core/app/frontend/`
 
 Streamlit application providing a human-facing interface.
 

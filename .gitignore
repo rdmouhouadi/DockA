@@ -38,6 +38,9 @@ htmlcov/
 .idea/
 *.iml
 
+# Local AI assistant settings — machine-specific, never committed
+.claude/
+
 # macOS
 .DS_Store
 .AppleDouble

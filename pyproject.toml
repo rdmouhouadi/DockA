@@ -5,3 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = []
+
+# ---------------------------------------------------------------------------
+# pytest
+# - testpaths: only collect real test suites, so Airflow DAG files
+#   (which import `airflow`, not installed locally) are never collected
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["core/tests"]

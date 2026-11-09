@@ -53,11 +53,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ---------------------------------------------------------------------------
 # UI application code
 #
-# Only the UI code + Ingestion package (used for direct pipeline calls
+# Only the UI code + ingestion package (used for direct pipeline calls
 # triggered by user uploads — bypasses Airflow for interactive ingestion)
+#
+# Sources live under core/ in the monorepo; they are copied to the same
+# container paths as before so `app.*` / `ingestion.*` imports are unchanged.
 # ---------------------------------------------------------------------------
-COPY app/frontend ./app/frontend
-COPY ingestion ./ingestion
+COPY core/app/frontend ./app/frontend
+COPY core/ingestion ./ingestion
 
 # ---------------------------------------------------------------------------
 # Expose port
