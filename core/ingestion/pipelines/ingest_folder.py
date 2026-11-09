@@ -88,6 +88,10 @@ def ingest_folder(
         if not path.is_file():
             continue
 
+        # Hidden files (.gitkeep, .DS_Store, ...) are never documents
+        if path.name.startswith("."):
+            continue
+
         try:
             checksum = file_checksum(str(path))
             raw_content = load_file(path)
