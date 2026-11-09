@@ -49,6 +49,13 @@ In a world where data privacy is critical — especially in regulated industries
 you decide what enters the knowledge base. Nothing is indexed without explicit action.
 Your documents stay on your infrastructure. No data leaves your environment.
 
+In practice:
+- **Keep files or not — your choice per upload.** By default DocKA does *not* keep your original files:
+  it extracts the text, makes it searchable, and deletes the upload. Tick *Keep a copy of the original files*
+  to store them in `data/uploads/<source>/` so they can be re-processed later.
+- **Remove what you no longer want searchable.** Removing a source deletes it from the search index,
+  from the database (including its chunks) and deletes its kept files.
+
 **DocKA is also a documented learning journey.**  
 The project is built incrementally — from the most basic notion of Information Retrieval  
 (keyword search with BM25) to progressively more complex systems (semantic search, hybrid retrieval, RAG).  
@@ -137,7 +144,7 @@ It is built exclusively on **synthetic patient data**.
 | Language detection | ✅ | Auto-detection via langdetect |
 | BM25 search | ✅ | Ranked results with highlighted snippets |
 | FastAPI `/search` | ✅ | REST endpoint with fuzziness |
-| Streamlit UI | ✅ | Search + file upload + source tags |
+| Streamlit UI | ✅ | Search + file upload + source tags, keep-files choice, source removal |
 | Airflow scheduling | ✅ | CeleryExecutor, DAG-based ingestion |
 | Unit tests | ✅ | 32 tests — core, normalizer, extractors |
 

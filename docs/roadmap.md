@@ -398,11 +398,23 @@ These tasks apply across all phases.
 | `infra/README.md` | ✅ | Two-DB design, compose stacks |
 | `docs/evaluation.md` | ⬜ | Phase 2+ search and RAG quality metrics |
 
+### Data Control
+
+DocKA's promise: *you decide what is stored and what is searchable.*
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Keep original files — per-upload choice | ✅ | Off by default; kept files in `data/uploads/<source>/` |
+| `file_retained` recorded per document | ✅ | Sidebar shows `files kept` / `text only` |
+| Remove a source | ✅ | Search index + PostgreSQL (chunks cascade) + kept files |
+| Source tag validation | ✅ | Tags cannot escape `data/uploads/` |
+| Remove a single document | ⬜ | Finer-grained than per source |
+
 ### Testing
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Unit tests — core modules | ✅ | 32 tests passing — `pytest` |
+| Unit tests — core modules | ✅ | 60 tests passing — `pytest` |
 | Integration tests — API endpoints | ⬜ | Phase 2 |
 | Search quality tests | ⬜ | Phase 2 evaluation |
 | RAG evaluation | ⬜ | Phase 3 (RAGAS) |
