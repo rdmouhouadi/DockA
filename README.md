@@ -99,6 +99,29 @@ and answers questions with cited, verifiable responses.
 - Airflow handles **scheduled/batch ingestion** — pipelines are framework-agnostic
 - The UI calls the ingestion pipeline **directly** for interactive uploads
 
+### Core + Verticals
+
+DocKA is organised as **one core platform** with **domain-specific verticals** built on top of it.
+The core (everything above) stays domain-agnostic; each vertical adds the extractors,
+pipelines, storage and UI its domain needs — all in this single repository.
+
+```
+┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+│  DocKA Clinical  │  DocKA Utility   │  DocKA Aviation  │  DocKA Contracts │
+│  patient history │  smart metering  │  MRO maintenance │  obligations     │
+│  + Neo4j timeline│  asset history   │  history         │  retrieval       │
+│  [in development]│  [planned]       │  [roadmap]       │  [roadmap]       │
+├──────────────────┴──────────────────┴──────────────────┴──────────────────┤
+│                               DocKA Core                                  │
+│    ingestion · normalization · BM25 / hybrid search · RAG · API · UI      │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+**DocKA Clinical** is the first vertical, currently in development: retrieval over a patient's
+clinical documents (referral letters, lab reports, discharge summaries), with the patient
+timeline stored as a traversable **Neo4j** graph and every answer citing its source.
+It is built exclusively on **synthetic patient data**.
+
 ---
 
 ## ✅ Current Status — v0.1.0 (Phase 1 Complete)
@@ -131,7 +154,7 @@ Each phase introduces new concepts, starting from fundamentals:
 | Phase 1 | Information Retrieval, BM25, inverted index, TF-IDF, text normalization, idempotency, orchestration |
 | Phase 2 | Embeddings, vector search, cosine similarity, chunking strategies, hybrid retrieval, RRF, NDCG |
 | Phase 3 | RAG architecture, prompt engineering, faithfulness, hallucination, RAGAS, LLM tracing |
-| Phase 4 | Web crawling, API ingestion, domain ontologies, knowledge graphs |
+| DocKA Clinical | Medical NLP, OCR, knowledge graphs (Neo4j), graph + document retrieval, guardrails |
 
 Every concept is backed by a curated learning reference in [`docs/learning-references.md`](docs/learning-references.md).  
 The troubleshooting log in [`docs/troubleshooting.md`](docs/troubleshooting.md) documents every error encountered and how it was resolved.
@@ -145,14 +168,17 @@ This is not a tutorial. It is my record of how I learnt to build a production sy
 ### Phase 1 — POC: Keyword Search ✅
 Filesystem ingestion → BM25 search → Streamlit UI
 
-### Phase 2 — Semantic Search ⬜
-Document chunking → multilingual embeddings → hybrid BM25 + vector retrieval → NDCG@10 evaluation
+### Phase 2 — Semantic Search ⬜ · `v0.2.0`
+Document chunking → multilingual embeddings → hybrid BM25 + vector retrieval (RRF) → NDCG@10 evaluation
 
-### Phase 3 — RAG ⬜
-Retrieval-Augmented Generation → cited answers → RAGAS evaluation → Langfuse tracing
+### Phase 3 — RAG with Citations ⬜ · `v0.3.0`
+Local LLM (Ollama) → cited answers → "not found in the record" guardrail → RAGAS evaluation
 
-### Phase 4 — Domain Portal ⬜
-Web source ingestion (PubMed, crawlers) → domain configuration → healthcare demo corpus
+### DocKA Clinical — First Vertical 🔄 · `v0.4.0-clinical`
+Synthetic patient documents → medical NLP + OCR → Neo4j patient timeline → cited retrieval over graph + documents
+
+### Next Verticals ⬜
+DocKA Utility (smart metering) → DocKA Aviation MRO → DocKA Contracts
 
 > See [`docs/roadmap.md`](docs/roadmap.md) for the full task-level breakdown.
 
@@ -175,7 +201,7 @@ cd docka
 ### 2 — Create the environment file
 
 ```bash
-cp infra/.env.example infra/.env
+cp .env.example infra/.env
 ```
 
 Edit `infra/.env` with your configuration (defaults work for local development).
@@ -185,6 +211,12 @@ Edit `infra/.env` with your configuration (defaults work for local development).
 ```bash
 cd infra
 docker compose up --build
+```
+
+To run the core together with the DocKA Clinical services (adds Neo4j):
+
+```bash
+docker compose -f docker-compose.clinical.yml up --build
 ```
 
 ### 4 — Access the services
@@ -214,50 +246,67 @@ Open `http://localhost:8501` and search for any term in your documents.
 
 ```
 docka/
-├── app/
-│   ├── backend_api/          # FastAPI — search endpoint
-│   │   ├── routers/
-│   │   └── services/
-│   ├── common/               # Shared utilities
-│   └── frontend/             # Streamlit UI
+├── core/                         # 🧱 Shared platform — domain-agnostic
+│   ├── ingestion/
+│   │   ├── core/                 # Pure ingestion logic (no framework deps)
+│   │   │   ├── checksum.py
+│   │   │   ├── loader.py
+│   │   │   ├── normalizer.py
+│   │   │   ├── repository.py
+│   │   │   └── es_repository.py
+│   │   ├── extractors/           # Format-specific extractors
+│   │   │   ├── pdf.py
+│   │   │   ├── docx.py
+│   │   │   ├── html.py
+│   │   │   └── txt.py
+│   │   ├── pipelines/            # Framework-agnostic orchestration
+│   │   │   ├── ingest_folder.py
+│   │   │   ├── ingest_postgres.py
+│   │   │   └── ingest_elasticsearch.py
+│   │   └── airflow/              # Airflow adapter (DAGs only)
+│   │       └── dags/
+│   ├── app/
+│   │   ├── backend_api/          # FastAPI — search endpoint
+│   │   │   ├── routers/
+│   │   │   └── services/
+│   │   └── frontend/             # Streamlit UI
+│   └── tests/
+│       └── test_core.py          # Unit tests (32 tests)
 │
-├── Ingestion/
-│   ├── core/                 # Pure ingestion logic (no framework deps)
-│   │   ├── checksum.py
-│   │   ├── loader.py
-│   │   ├── normalizer.py
-│   │   ├── repository.py
-│   │   └── es_repository.py
-│   ├── extractors/           # Format-specific extractors
-│   │   ├── pdf.py
-│   │   ├── docx.py
-│   │   ├── html.py
-│   │   └── txt.py
-│   ├── pipelines/            # Framework-agnostic orchestration
-│   │   ├── ingest_folder.py
-│   │   ├── ingest_postgres.py
-│   │   └── ingest_elasticsearch.py
-│   └── airflow/              # Airflow adapter (DAGs only)
-│       └── dags/
+├── verticals/                    # 🧩 Domain-specific layers built on core
+│   ├── clinical/                 # DocKA Clinical (in development)
+│   │   ├── extractors/           # Medical NLP, OCR
+│   │   ├── graph/                # Neo4j schema + queries
+│   │   ├── pipelines/            # Clinical ingestion pipeline
+│   │   └── ui/                   # Clinical Streamlit interface
+│   └── utility/                  # DocKA Utility (planned)
+│       ├── extractors/
+│       ├── pipelines/
+│       └── ui/
 │
 ├── infra/
-│   ├── docker/               # Dockerfiles
-│   ├── elasticsearch/        # Index mappings
-│   ├── postgres/             # Init SQL
-│   └── docker-compose.yml
+│   ├── docker/                   # api / ui / airflow + core and vertical Dockerfiles
+│   ├── elasticsearch/            # Index mappings
+│   ├── postgres/                 # Init SQL
+│   ├── docker-compose.yml        # Full stack
+│   ├── docker-compose.core.yml   # Core only
+│   └── docker-compose.clinical.yml  # Core + Neo4j
 │
 ├── data/
-│   ├── samples/              # Sample documents
-│   └── uploads/              # User-uploaded documents
+│   ├── samples/                  # Sample documents
+│   └── uploads/                  # User-uploaded documents
 │
-├── tests/
-│   └── test_core.py          # Unit tests (32 tests)
+├── notebooks/                    # IR / BM25 / embedding experiments
 │
-└── docs/
-    ├── architecture.md
-    ├── roadmap.md
-    ├── troubleshooting.md
-    └── learning-references.md
+├── docs/
+│   ├── architecture.md
+│   ├── roadmap.md
+│   ├── troubleshooting.md
+│   └── learning-references.md
+│
+├── CHANGELOG.md
+├── LICENSE
+└── .env.example
 ```
 
 ---
@@ -269,8 +318,8 @@ docka/
 pip install -r requirements.txt
 pip install pytest
 
-# Run all tests
-pytest tests/ -v
+# Run all tests (from the repo root — test paths are set in pyproject.toml)
+pytest -v
 ```
 
 ---
