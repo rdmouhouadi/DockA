@@ -11,7 +11,9 @@ from ingestion.core.loader import load_file
 from ingestion.core.checksum import file_checksum
 from ingestion.core.es_repository import get_client, ensure_index
 from ingestion.core.normalizer import normalize_text
+from ingestion.core.repository import get_doc_id_by_checksum, ensure_chunks_table
 from ingestion.pipelines.ingest_postgres import ingest_document_postgres
+from ingestion.pipelines.ingest_chunks import ingest_chunks_postgres
 from ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
 
 from langdetect import detect, LangDetectException
@@ -44,7 +46,8 @@ def ingest_folder(root_path: Path, source: str) -> dict:
     1. Compute checksum
     2. Extract text content
     3. Persist metadata to PostgreSQL
-    4. Index content to Elasticsearch
+    4. Chunk content and persist chunks to PostgreSQL
+    5. Index content to Elasticsearch
 
     Both stores are updated idempotently — safe to re-run.
     PostgreSQL is the source of truth for metadata.
@@ -54,6 +57,7 @@ def ingest_folder(root_path: Path, source: str) -> dict:
 
     # --- Connections ---------------------------------------------------------
     conn = _get_pg_conn()
+    ensure_chunks_table(conn)
     es_client = get_client()
     ensure_index(es_client)
 
@@ -61,7 +65,8 @@ def ingest_folder(root_path: Path, source: str) -> dict:
     summary = {
         "ingested": 0,
         "skipped": 0,
-        "failed": 0
+        "failed": 0,
+        "chunks": 0     # chunks inserted this run (incl. backfill of older documents)
     }
 
     for path in root_path.rglob("*"):
@@ -73,8 +78,12 @@ def ingest_folder(root_path: Path, source: str) -> dict:
             raw_content = load_file(path)
             content = normalize_text(raw_content)
 
+            # Reuse the doc_id of already-ingested content so every store
+            # (PostgreSQL, chunks, Elasticsearch) shares one stable id
+            doc_id = get_doc_id_by_checksum(conn, checksum) or str(uuid.uuid4())
+
             doc = {
-                "doc_id": str(uuid.uuid4()),
+                "doc_id": doc_id,
                 "source": source,
                 "path": str(path),
                 "title": path.stem,
@@ -85,9 +94,13 @@ def ingest_folder(root_path: Path, source: str) -> dict:
             }
 
             pg_inserted = ingest_document_postgres(conn, doc)
+            # After the document row exists — chunks reference documents.doc_id
+            chunks_inserted = ingest_chunks_postgres(conn, doc)
             es_indexed = ingest_document_elasticsearch(es_client, doc)
 
-            if pg_inserted or es_indexed:
+            summary["chunks"] += chunks_inserted
+
+            if pg_inserted or es_indexed or chunks_inserted:
                 summary["ingested"] += 1
             else:
                 summary["skipped"] += 1

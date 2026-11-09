@@ -28,3 +28,20 @@ CREATE TABLE documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_checksum ON documents(checksum);
 CREATE INDEX IF NOT EXISTS idx_documents_doc_id ON documents(doc_id);
+-- Chunks — Phase 2 (token-bounded passages of each document)
+-- Same DDL as CHUNKS_DDL in core/ingestion/core/repository.py — keep in sync.
+-- Existing databases get this table via ensure_chunks_table() at ingestion time.
+CREATE TABLE IF NOT EXISTS chunks (
+    id SERIAL PRIMARY KEY,
+    chunk_id TEXT UNIQUE NOT NULL,
+    doc_id TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    start_char INT NOT NULL,
+    end_char INT NOT NULL,
+    token_count INT NOT NULL,
+    created_at TIMESTAMP DEFAULT now(),
+    UNIQUE (doc_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id);

@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Phase 2 · M1 Document Chunking
+- `tokenizer.py` — `multilingual-e5-base` tokenizer (transformers, no PyTorch) with per-token char offsets
+- `chunker.py` — sliding-window chunker, 500 tokens / 50 overlap (`CHUNK_MAX_TOKENS`, `CHUNK_OVERLAP_TOKENS`)
+- `chunks` table in PostgreSQL, created idempotently by `ensure_chunks_table()`
+- `ingest_chunks.py` — chunking step in `ingest_folder`; re-runs backfill documents ingested earlier
+- 15 chunker unit tests (47 tests total)
+
+### Fixed
+- Elasticsearch mapping `docs_v1.json` was never applied — now shipped in `core/ingestion/mappings/` and loaded by `ensure_index()`; `checksum` is an indexed keyword
+- `doc_id` changed on every ingestion run for already-ingested documents — now reused by checksum
+- Airflow DAG import error: `python-docx` missing from the Airflow image
+- Airflow Celery worker crash with newer `click` — `transformers` pinned to 4.57.6
+- `.env.example` shipped a bare Elasticsearch hostname instead of a full URL
+
 ### Changed
 - Repository restructured as **core + verticals** monorepo:
   `Ingestion/` → `core/ingestion/`, `app/` → `core/app/`, `tests/` → `core/tests/`

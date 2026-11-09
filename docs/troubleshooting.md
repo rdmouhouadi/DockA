@@ -375,6 +375,33 @@ Dynamic mapping is convenient for exploration but causes
 
 ---
 
+### ❌ Airflow Worker Crash: 'NoneType' object has no attribute 'split'
+
+**When:** Phase 2 M1 — after adding `transformers` to the Airflow image
+**Severity:** Critical — worker crash-looping, every DAG task stuck in `queued`
+
+**What happened:**
+The DAG run never started. The worker restarted every few seconds with:
+```
+File ".../celery/utils/nodenames.py", line 71, in nodesplit
+    parts = name.split(NODENAME_SEP, 1)
+AttributeError: 'NoneType' object has no attribute 'split'
+```
+`transformers==5.22.2` requires `huggingface_hub>=1.31`, which requires `click>=8.4.2`.
+pip silently upgraded `click` from 8.1.7 (shipped with Airflow 2.10.4) to 8.5.1,
+and Celery 5.4's CLI is not compatible with newer `click`.
+
+**Resolution:**
+Pinned `transformers==4.57.6` (uses `huggingface_hub` 0.36, no `click` dependency).
+The tokenizer API used by DocKA is identical. `click` stays at 8.1.7.
+
+**Lesson:**
+Installing a package into the Airflow image can silently upgrade Airflow's own dependencies.
+Compare `pip list` against the stock image after adding a dependency, and check worker
+health — the webserver UI looks fine even when no worker can run tasks.
+
+---
+
 ### ❌ ModuleNotFoundError: No module named 'Ingestion'
 
 **When:** Phase 1, running unit tests  
@@ -466,6 +493,49 @@ the ingestion pipeline over a single document.
 ---
 
 ## Docker
+
+---
+
+### ❌ Broken DAG: No module named 'docx'
+
+**When:** Phase 2 M1 — first DAG run after the restructure
+**Severity:** High — the ingestion DAG could not be imported by Airflow
+
+**What happened:**
+`airflow dags list-import-errors` showed `ModuleNotFoundError: No module named 'docx'`.
+The extractor registry imports every extractor, but `python-docx` was never added to
+`infra/docker/airflow.requirements.txt` (only to the root `requirements.txt` used by api/ui).
+`beautifulsoup4` worked only because the Airflow base image happens to include it.
+
+**Resolution:**
+Added `python-docx` and `beautifulsoup4` explicitly to `airflow.requirements.txt`.
+
+**Lesson:**
+Two requirements files drift apart. Every package imported by `core/ingestion` must be in both.
+`airflow dags list-import-errors` is the quickest check after any image change.
+
+---
+
+### ⚠️ Uploaded Files Lost on Container Rebuild
+
+**When:** Phase 2 M1 — preparing an Elasticsearch index rebuild
+**Severity:** High — uploaded documents could not be re-indexed or chunked
+**Status:** Open — design decision pending (optional file retention per upload)
+
+**What happened:**
+The `ui` service has no volume, so files uploaded through Streamlit were stored only inside
+the container and disappeared when it was recreated. PostgreSQL holds metadata but not the
+document text, so the text of uploaded documents survived only in Elasticsearch — the
+"disposable" index had become the only copy.
+
+**Workaround used:**
+Applied the new Elasticsearch mapping with an in-place reindex
+(copy to a temporary index → recreate with mapping → copy back) instead of
+delete-and-re-ingest, so no uploaded document was lost.
+
+**Lesson:**
+"Elasticsearch is disposable" only holds if the source content can be re-ingested.
+Verify where every input actually lives before deleting an index.
 
 ---
 

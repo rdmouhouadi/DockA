@@ -97,7 +97,9 @@ The heart of DocKA. Pure Python, no framework dependencies.
 | `loader.py` | Scans directories and dispatches files to the correct extractor |
 | `checksum.py` | Computes SHA-256 content hashes for idempotency |
 | `normalizer.py` | Cleans extracted text (whitespace, control chars, page numbers) |
-| `repository.py` | PostgreSQL interactions (insert, existence checks) |
+| `tokenizer.py` | Embedding model tokenizer — token count and char offsets per token |
+| `chunker.py` | Splits text into overlapping, token-bounded chunks (pure logic) |
+| `repository.py` | PostgreSQL interactions (documents and chunks: insert, existence checks) |
 | `es_repository.py` | Elasticsearch interactions (index creation, document indexing) |
 
 ### 🔴 Extractors — `core/ingestion/extractors/`
@@ -122,6 +124,7 @@ Thin orchestration layer. Assembles core modules into reusable workflows.
 |----------|---------------|
 | `ingest_folder.py` | Scans a folder and ingests all supported documents |
 | `ingest_postgres.py` | Persists one document to PostgreSQL |
+| `ingest_chunks.py` | Chunks one document and persists its chunks to PostgreSQL |
 | `ingest_elasticsearch.py` | Indexes one document into Elasticsearch |
 
 Each sub-pipeline handles **one document, one destination**.
@@ -270,6 +273,33 @@ CREATE INDEX idx_documents_doc_id   ON documents(doc_id);
 **Key constraint:** `checksum UNIQUE` — this is the idempotency enforcement.
 Attempting to insert a document with an existing checksum silently does nothing (`ON CONFLICT DO NOTHING`).
 
+### PostgreSQL — `chunks` (Phase 2)
+
+Token-bounded passages of each document — the unit embedded and retrieved from Phase 2 on.
+
+```sql
+CREATE TABLE IF NOT EXISTS chunks (
+    id SERIAL PRIMARY KEY,
+    chunk_id TEXT UNIQUE NOT NULL,     -- "<doc_id>:<chunk_index>"
+    doc_id TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    start_char INT NOT NULL,           -- position in the normalized document
+    end_char INT NOT NULL,
+    token_count INT NOT NULL,
+    created_at TIMESTAMP DEFAULT now(),
+    UNIQUE (doc_id, chunk_index)
+);
+```
+
+**Key decisions:**
+- Chunk length is measured with the **embedding model's tokenizer** (`multilingual-e5-base`):
+  500 tokens + 2 special tokens + the 2-token `passage: ` prefix stays under the model's 512 limit
+- 50-token overlap so a sentence crossing a boundary is retrievable from either side
+- Chunk text is sliced from the document by character offsets — `start_char` / `end_char`
+  become citation anchors in Phase 3
+- Created by `ensure_chunks_table()` at pipeline start, so existing databases need no volume reset
+
 ### PostgreSQL — `docka_airflow`
 
 Airflow internal metadata database. Completely isolated from application data.
@@ -278,6 +308,7 @@ Managed entirely by Airflow — DocKA never reads or writes to this database.
 ### Elasticsearch — `docka_documents`
 
 Search index. Stores full document content for BM25 retrieval.
+Mapping file: `core/ingestion/mappings/docs_v1.json`, applied by `ensure_index()` when the index is created.
 
 ```json
 {
@@ -289,7 +320,7 @@ Search index. Stores full document content for BM25 retrieval.
       "title":      { "type": "text", "analyzer": "standard" },
       "content":    { "type": "text", "analyzer": "standard" },
       "language":   { "type": "keyword" },
-      "checksum":   { "type": "keyword", "index": false },
+      "checksum":   { "type": "keyword" },
       "created_at": { "type": "date" }
     }
   }
@@ -297,7 +328,8 @@ Search index. Stores full document content for BM25 retrieval.
 ```
 
 **Key decisions:**
-- `path` and `checksum` are `index: false` — stored but not searchable (no value in searching these)
+- `path` is `index: false` — stored but not searchable (no value in searching it)
+- `checksum` is an indexed `keyword` — the ingestion idempotency check runs a `term` query on it
 - `title` is boosted 3x at query time (`title^3`) — title matches rank higher than content matches
 - `content.keyword` is ignored for very long texts — this is expected Elasticsearch behavior
 

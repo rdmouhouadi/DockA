@@ -3,3 +3,8 @@ psycopg2-binary
 python-dotenv
 elasticsearch==8.12.0
 langdetect
+python-docx
+beautifulsoup4
+# Pinned to 4.x: transformers 5 pulls huggingface_hub>=1.31, which needs click>=8.4.2
+# and breaks Airflow 2.10.4 Celery workers (click 8.1.7). See troubleshooting.md.
+transformers==4.57.6
