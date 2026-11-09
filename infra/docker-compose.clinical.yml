@@ -1,0 +1,67 @@
+# ============================================================================
+# DocKA — Docker Compose (Core + Clinical Vertical)
+#
+# Run:  docker compose -f docker-compose.clinical.yml up -d   (from infra/)
+#
+# Starts the whole core platform plus the services DocKA Clinical needs:
+# - Neo4j : patient timeline graph
+#           (Patient, Encounter, Medication, LabResult, Diagnosis, Allergy)
+#
+# Status: STUB — infrastructure only. The clinical API/UI services
+# (built from infra/docker/clinical.Dockerfile) are added in Month 2.
+# ============================================================================
+
+include:
+  # Core services are defined once, in docker-compose.core.yml
+  - docker-compose.core.yml
+
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Neo4j — Patient Timeline Graph
+  #
+  # Browser UI : http://localhost:7474
+  # Bolt       : bolt://localhost:7687  (bolt://neo4j:7687 from containers)
+  # Login      : NEO4J_USER / NEO4J_PASSWORD from .env
+  #
+  # Pinned to the 5.26 LTS line for stability.
+  # Heap/page cache kept small to coexist with Airflow on a laptop.
+  # --------------------------------------------------------------------------
+  neo4j:
+    image: neo4j:5.26
+    container_name: docka_neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    restart: unless-stopped
+
+    environment:
+      # Neo4j expects auth as a single "user/password" string
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+
+    volumes:
+      - neo4j_data:/data
+
+    healthcheck:
+      # HTTP endpoint answers once the database is ready to accept queries
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+    # docka_net is declared in docker-compose.core.yml
+    networks:
+      - docka_net
+
+
+# ---------------------------------------------------------------------------
+# Volumes — clinical-only persistent storage
+# To reset the graph: docker compose -f docker-compose.clinical.yml down -v
+# ---------------------------------------------------------------------------
+volumes:
+  neo4j_data:
