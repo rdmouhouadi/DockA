@@ -166,3 +166,17 @@ def insert_chunks(conn, doc_id: str, chunks: list[dict]):
             ]
         )
     conn.commit()
+
+
+def delete_documents_by_source(conn, source: str) -> int:
+    """
+    Delete every document of a source tag.
+    Their chunks are removed by ON DELETE CASCADE.
+
+    Returns the number of documents deleted.
+    """
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM documents WHERE source = %s", (source,))
+        deleted = cur.rowcount
+    conn.commit()
+    return deleted
