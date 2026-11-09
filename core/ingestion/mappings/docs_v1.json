@@ -44,6 +44,9 @@
       },
       "created_at": {
         "type": "date"
+      },
+      "expires_at": {
+        "type": "date"
       }
     }
   }

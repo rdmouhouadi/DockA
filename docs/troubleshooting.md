@@ -554,6 +554,31 @@ Verify where every input actually lives before deleting an index.
 
 ---
 
+### ❌ Purge DAG Failed: column "expires_at" does not exist
+
+**When:** Phase 2 — first scheduled run of `docka_purge_expired`
+**Severity:** High — temporary uploads would not have been purged
+
+**What happened:**
+```
+psycopg2.errors.UndefinedColumn: column "expires_at" does not exist
+```
+The new column is added by `ensure_schema()`, but only `ingest_folder` called it.
+The purge DAG ran before any ingestion, on a database that had not been upgraded yet.
+The UI sidebar had the same weakness: its query would fail and the error was swallowed,
+showing "No sources ingested yet."
+
+**Resolution:**
+`purge_expired()` calls `ensure_schema()` first, and the UI runs it once per process
+(`st.cache_resource`) before listing sources.
+
+**Lesson:**
+With in-place schema upgrades, *every* entry point that reads the new columns must run
+the upgrade — not just the writer. A scheduled job is often the first thing to run after
+a deployment.
+
+---
+
 ### ❌ UI Used Default Database Credentials
 
 **When:** Phase 2 — adding source removal to the UI

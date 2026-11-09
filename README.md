@@ -49,12 +49,17 @@ In a world where data privacy is critical — especially in regulated industries
 you decide what enters the knowledge base. Nothing is indexed without explicit action.
 Your documents stay on your infrastructure. No data leaves your environment.
 
-In practice:
-- **Keep files or not — your choice per upload.** By default DocKA does *not* keep your original files:
-  it extracts the text, makes it searchable, and deletes the upload. Tick *Keep a copy of the original files*
-  to store them in `data/uploads/<source>/` so they can be re-processed later.
-- **Remove what you no longer want searchable.** Removing a source deletes it from the search index,
-  from the database (including its chunks) and deletes its kept files.
+In practice, every upload comes with two explicit choices — and DocKA tells you exactly what it
+will store before anything is uploaded:
+- **How long is it searchable?** Searching needs the extracted text, so DocKA stores it — but you decide
+  for how long. **Temporary** (the default: 1 hour, 24 hours or 7 days) means the documents, their text
+  and any kept files are deleted automatically when the time is up, and stop appearing in search the
+  moment they expire. **Until I remove it** keeps them until you remove the source.
+- **Keep the original files?** Off by default: the files are deleted right after their text is extracted.
+  Tick *Keep a copy of the original files* to store them in `data/uploads/<source>/` (for the same period)
+  so they can be re-processed later.
+- **Remove what you no longer want searchable** at any time: removing a source deletes it from the search
+  index, from the database (including its chunks) and deletes its kept files.
 
 **DocKA is also a documented learning journey.**  
 The project is built incrementally — from the most basic notion of Information Retrieval  
@@ -144,9 +149,21 @@ It is built exclusively on **synthetic patient data**.
 | Language detection | ✅ | Auto-detection via langdetect |
 | BM25 search | ✅ | Ranked results with highlighted snippets |
 | FastAPI `/search` | ✅ | REST endpoint with fuzziness |
-| Streamlit UI | ✅ | Search + file upload + source tags, keep-files choice, source removal |
+| Streamlit UI | ✅ | Search + file upload + source tags, temporary or permanent uploads, keep-files choice, source removal |
 | Airflow scheduling | ✅ | CeleryExecutor, DAG-based ingestion |
 | Unit tests | ✅ | 32 tests — core, normalizer, extractors |
+
+### 🔄 In progress — Phase 2 (Semantic Search)
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Document chunking | ✅ | 500-token chunks, 50 overlap, measured with the `multilingual-e5-base` tokenizer |
+| Chunks in PostgreSQL | ✅ | Chunk text + character offsets (citation anchors for Phase 3) |
+| Upload lifetime | ✅ | Temporary (1 h / 24 h / 7 days, default) or until removed — expired content leaves search on time and is purged |
+| Keep original files | ✅ | Per-upload choice, off by default |
+| Remove a source | ✅ | Search index + database (incl. chunks) + kept files |
+| Unit tests | ✅ | 74 tests |
+| Embeddings · hybrid search · NDCG@10 | ⬜ | Milestones 2–4 |
 
 ---
 
@@ -259,6 +276,10 @@ docka/
 │   │   │   ├── checksum.py
 │   │   │   ├── loader.py
 │   │   │   ├── normalizer.py
+│   │   │   ├── tokenizer.py      # embedding model tokenizer (token offsets)
+│   │   │   ├── chunker.py        # token-bounded sliding-window chunks
+│   │   │   ├── storage.py        # upload folders (kept files)
+│   │   │   ├── retention.py      # temporary upload lifetimes
 │   │   │   ├── repository.py
 │   │   │   └── es_repository.py
 │   │   ├── extractors/           # Format-specific extractors
@@ -269,17 +290,23 @@ docka/
 │   │   ├── pipelines/            # Framework-agnostic orchestration
 │   │   │   ├── ingest_folder.py
 │   │   │   ├── ingest_postgres.py
-│   │   │   └── ingest_elasticsearch.py
+│   │   │   ├── ingest_chunks.py
+│   │   │   ├── ingest_elasticsearch.py
+│   │   │   ├── remove_source.py
+│   │   │   └── purge_expired.py
 │   │   ├── mappings/             # Elasticsearch index mapping (docs_v1.json)
 │   │   └── airflow/              # Airflow adapter (DAGs only)
-│   │       └── dags/
+│   │       └── dags/             # ingest_documents, purge_expired
 │   ├── app/
 │   │   ├── backend_api/          # FastAPI — search endpoint
 │   │   │   ├── routers/
 │   │   │   └── services/
 │   │   └── frontend/             # Streamlit UI
-│   └── tests/
-│       └── test_core.py          # Unit tests (32 tests)
+│   └── tests/                    # Unit tests (74 tests)
+│       ├── test_core.py          # checksum, normalizer, language, extractors
+│       ├── test_chunker.py       # chunking
+│       ├── test_storage.py       # upload folders
+│       └── test_retention.py     # upload lifetimes
 │
 ├── verticals/                    # 🧩 Domain-specific layers built on core
 │   ├── clinical/                 # DocKA Clinical (in development)

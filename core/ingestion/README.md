@@ -168,8 +168,15 @@ core/ingestion/
 │   ├── loader.py            # scan folders, dispatch to extractors
 │   ├── checksum.py          # SHA-256 idempotency hashing
 │   ├── normalizer.py        # text cleaning and unicode normalization
-│   ├── repository.py        # PostgreSQL access
+│   ├── tokenizer.py         # embedding model tokenizer (token count + char offsets)
+│   ├── chunker.py           # token-bounded, overlapping chunks (pure)
+│   ├── storage.py           # upload folder per source, recorded paths (pure)
+│   ├── retention.py         # temporary upload lifetimes (pure)
+│   ├── repository.py        # PostgreSQL access (documents, chunks, schema upgrade)
 │   └── es_repository.py     # Elasticsearch access
+│
+├── mappings/
+│   └── docs_v1.json         # Elasticsearch index mapping
 │
 ├── extractors/              # 🔴 DocKA Core (format-specific)
 │   ├── __init__.py          # extractor registry
@@ -182,7 +189,10 @@ core/ingestion/
 │   ├── __init__.py
 │   ├── ingest_folder.py     # folder orchestrator — calls sub-pipelines
 │   ├── ingest_postgres.py   # one document → PostgreSQL
-│   └── ingest_elasticsearch.py  # one document → Elasticsearch
+│   ├── ingest_chunks.py     # one document → chunks in PostgreSQL
+│   ├── ingest_elasticsearch.py  # one document → Elasticsearch
+│   ├── remove_source.py     # a source → removed everywhere
+│   └── purge_expired.py     # expired temporary uploads → removed everywhere
 │
 ├── sources/                 # 🟡 Web source adapters (Phase 4)
 │   ├── __init__.py
@@ -192,6 +202,7 @@ core/ingestion/
 └── airflow/                 # 🔵 Infrastructure adapter
     ├── dags/
     │   ├── ingest_documents.py      # filesystem ingestion DAG
+    │   ├── purge_expired.py         # deletes expired temporary uploads (every 15 min)
     │   └── ingest_web_source.py     # web ingestion DAG (Phase 4)
     └── README.md
 ```
@@ -230,13 +241,32 @@ It has **no knowledge of Airflow, scheduling, or infrastructure**.
   unicode normalization, control character removal,
   page number stripping, whitespace collapsing.
 
+- **`tokenizer.py`** *(Phase 2)*
+  Loads the `multilingual-e5-base` tokenizer once per process and returns
+  each token's character span, so chunk sizes match what the embedding model sees.
+
+- **`chunker.py`** *(Phase 2)*
+  Sliding window over tokens (500 tokens, 50 overlap by default).
+  Chunks are sliced from the original text by character offsets.
+
+- **`storage.py`**
+  Maps a source tag to its upload folder (`data/uploads/<source>/`),
+  rejecting tags that would escape it, and computes the path recorded for
+  files that were not kept.
+
+- **`retention.py`**
+  Temporary upload durations (1 hour / 24 hours / 7 days), expiry computation,
+  and the rule that a re-upload can only extend retention.
+
 - **`repository.py`**
-  Handles all PostgreSQL interactions.
-  Uses `ON CONFLICT (checksum) DO NOTHING` for idempotency.
+  Handles all PostgreSQL interactions — documents and chunks.
+  Uses `ON CONFLICT ... DO NOTHING` for idempotency.
+  `ensure_schema()` upgrades existing databases in place (new columns, chunks table).
 
 - **`es_repository.py`**
   Handles all Elasticsearch interactions.
-  Creates the index with explicit mapping if it does not exist.
+  Creates the index with the explicit mapping (`mappings/docs_v1.json`) and adds
+  new mapping fields to an existing index.
   Uses `doc_id` as the Elasticsearch document ID for idempotency.
 
 ### Milestone — Completion Criteria
@@ -308,7 +338,11 @@ Each sub-pipeline handles **one document, one destination**:
 ```
 ingest_folder.py          ← coordinator
     ├── ingest_postgres.py    ← one doc → PostgreSQL
+    ├── ingest_chunks.py      ← one doc → chunks in PostgreSQL
     └── ingest_elasticsearch.py  ← one doc → Elasticsearch
+
+remove_source.py          ← one source → removed from ES, PostgreSQL, kept files
+purge_expired.py          ← expired temporary uploads → removed everywhere
 ```
 
 ### `ingest_folder.py` — Full Pipeline
@@ -319,10 +353,15 @@ ingest_folder.py          ← coordinator
 4. Extract text content (format-specific extractor)
 5. Normalize text (`normalizer.py`)
 6. Detect language (`langdetect`)
-7. Build normalized document dict
+7. Build normalized document dict (stable `doc_id`, `file_retained`, `expires_at`)
 8. Persist metadata → PostgreSQL
-9. Index content → Elasticsearch
-10. Log summary (ingested / skipped / failed / duration)
+9. Chunk content → PostgreSQL (`ingest_chunks.py`)
+10. Index content → Elasticsearch
+11. Log summary (ingested / skipped / failed / chunks / duration)
+
+Optional arguments used by UI uploads: `file_retained` (were the original files
+kept?), `stored_root` (logical path for files processed from a temp folder),
+`expires_at` (temporary uploads).
 
 ### `ingest_postgres.py` — PostgreSQL Sub-Pipeline
 
@@ -330,11 +369,24 @@ ingest_folder.py          ← coordinator
 - Inserts document metadata if new
 - Returns `True` (inserted) or `False` (skipped)
 
+### `ingest_chunks.py` — Chunks Sub-Pipeline
+
+- Skips documents that already have chunks (re-runs backfill older documents)
+- Chunks the normalized text and inserts all chunks in one transaction
+- Returns the number of chunks inserted
+
 ### `ingest_elasticsearch.py` — Elasticsearch Sub-Pipeline
 
 - Checks if checksum already indexed
-- Indexes full document content if new
+- Indexes full document content if new; otherwise syncs its `expires_at`
 - Returns `True` (indexed) or `False` (skipped)
+
+### `remove_source.py` / `purge_expired.py` — Data Control
+
+- Delete from Elasticsearch first, then PostgreSQL (chunks cascade), then kept files,
+  so a partial failure never leaves content searchable
+- Only files inside `data/uploads/` are ever deleted
+- `purge_expired()` is run every 15 minutes by the `docka_purge_expired` DAG
 
 ### Why This Split?
 
@@ -369,6 +421,10 @@ Its only role is to:
 
 - **`ingest_documents.py`** — Scheduled filesystem ingestion.
   Triggers `ingest_folder(path, source)` on the configured data directory.
+- **`purge_expired.py`** (`docka_purge_expired`) — Every 15 minutes.
+  Calls `purge_expired()`: deletes temporary uploads past their `expires_at`
+  from Elasticsearch, PostgreSQL (chunks cascade) and kept files.
+  Active on creation (`is_paused_upon_creation=False`).
 
 ### Planned DAGs (Phase 4)
 
@@ -417,6 +473,8 @@ Each source adapter:
 | M2 | Format extractors (PDF, DOCX, HTML, TXT) | ✅ |
 | M3 | Reusable pipelines (folder, postgres, elasticsearch) | ✅ |
 | M4 | Airflow scheduling | ✅ |
+| Phase 2 · M1 | Token-based chunking | ✅ |
+| Data control | Upload lifetime, kept files, source removal, purge | ✅ |
 | M5 | Web source ingestion (PubMed, crawler) | ⬜ |
 | M6 | Domain configuration & portal trigger | ⬜ |
 

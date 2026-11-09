@@ -30,14 +30,24 @@ def search_documents(query: str, size: int = 10) -> dict:
 
     es_query = {
         "query": {
-            "multi_match": {
-                "query": query,
-                "fields": [
-                    "title^3",    # Title matches weighted 3x higher than content
-                    "content"
-                ],
-                "type": "best_fields",
-                "fuzziness": "AUTO"  # Tolerates minor typos
+            "bool": {
+                "must": {
+                    "multi_match": {
+                        "query": query,
+                        "fields": [
+                            "title^3",    # Title matches weighted 3x higher than content
+                            "content"
+                        ],
+                        "type": "best_fields",
+                        "fuzziness": "AUTO"  # Tolerates minor typos
+                    }
+                },
+                # Temporary uploads stop being searchable the moment they
+                # expire — even before the purge job deletes them.
+                # Documents without expires_at (until removed) are unaffected.
+                "must_not": {
+                    "range": {"expires_at": {"lte": "now"}}
+                }
             }
         },
         "highlight": {

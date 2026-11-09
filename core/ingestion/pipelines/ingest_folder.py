@@ -44,6 +44,7 @@ def ingest_folder(
     source: str,
     file_retained: bool = True,
     stored_root: Path | None = None,
+    expires_at: datetime | None = None,
 ) -> dict:
     """
     Ingest all supported documents from a folder.
@@ -56,6 +57,8 @@ def ingest_folder(
         stored_root:   when files are processed from a temporary folder,
                        the logical location recorded as each document's path
                        (see storage.stored_path); None records the real path
+        expires_at:    temporary uploads — when the documents must be purged
+                       everywhere (see retention.py); None = until removed
 
     For each document:
     1. Compute checksum
@@ -106,6 +109,7 @@ def ingest_folder(
                 "source": source,
                 "path": stored_path(path, root_path, stored_root),
                 "file_retained": file_retained,
+                "expires_at": expires_at,
                 "title": path.stem,
                 "language": detect_language(content),
                 "content": content,
