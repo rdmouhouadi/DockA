@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 - 50-token overlap so a sentence crossing a boundary is retrievable from either side
 - Chunk text is sliced from the document by character offsets — `start_char` / `end_char`
   become citation anchors in Phase 3
-- Created by `ensure_chunks_table()` at pipeline start, so existing databases need no volume reset
+- Created by `ensure_schema()` at pipeline start, so existing databases need no volume reset
 
 ### PostgreSQL — `docka_airflow`
 

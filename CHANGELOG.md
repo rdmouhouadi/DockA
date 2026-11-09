@@ -12,7 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Added — Phase 2 · M1 Document Chunking
 - `tokenizer.py` — `multilingual-e5-base` tokenizer (transformers, no PyTorch) with per-token char offsets
 - `chunker.py` — sliding-window chunker, 500 tokens / 50 overlap (`CHUNK_MAX_TOKENS`, `CHUNK_OVERLAP_TOKENS`)
-- `chunks` table in PostgreSQL, created idempotently by `ensure_chunks_table()`
+- `chunks` table in PostgreSQL, created idempotently by `ensure_schema()`
 - `ingest_chunks.py` — chunking step in `ingest_folder`; re-runs backfill documents ingested earlier
 - 15 chunker unit tests (47 tests total)
 

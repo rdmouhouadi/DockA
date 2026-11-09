@@ -11,7 +11,8 @@ from ingestion.core.loader import load_file
 from ingestion.core.checksum import file_checksum
 from ingestion.core.es_repository import get_client, ensure_index
 from ingestion.core.normalizer import normalize_text
-from ingestion.core.repository import get_doc_id_by_checksum, ensure_chunks_table
+from ingestion.core.repository import get_doc_id_by_checksum, ensure_schema
+from ingestion.core.storage import stored_path
 from ingestion.pipelines.ingest_postgres import ingest_document_postgres
 from ingestion.pipelines.ingest_chunks import ingest_chunks_postgres
 from ingestion.pipelines.ingest_elasticsearch import ingest_document_elasticsearch
@@ -38,9 +39,23 @@ def detect_language(text: str) -> str | None:
     except LangDetectException:
         return None
 
-def ingest_folder(root_path: Path, source: str) -> dict:
+def ingest_folder(
+    root_path: Path,
+    source: str,
+    file_retained: bool = True,
+    stored_root: Path | None = None,
+) -> dict:
     """
     Ingest all supported documents from a folder.
+
+    Args:
+        root_path:     folder to scan (recursively)
+        source:        source tag recorded on every document
+        file_retained: whether the original files are kept on disk after
+                       ingestion — False for uploads the user chose not to keep
+        stored_root:   when files are processed from a temporary folder,
+                       the logical location recorded as each document's path
+                       (see storage.stored_path); None records the real path
 
     For each document:
     1. Compute checksum
@@ -57,7 +72,7 @@ def ingest_folder(root_path: Path, source: str) -> dict:
 
     # --- Connections ---------------------------------------------------------
     conn = _get_pg_conn()
-    ensure_chunks_table(conn)
+    ensure_schema(conn)
     es_client = get_client()
     ensure_index(es_client)
 
@@ -85,7 +100,8 @@ def ingest_folder(root_path: Path, source: str) -> dict:
             doc = {
                 "doc_id": doc_id,
                 "source": source,
-                "path": str(path),
+                "path": stored_path(path, root_path, stored_root),
+                "file_retained": file_retained,
                 "title": path.stem,
                 "language": detect_language(content),
                 "content": content,
