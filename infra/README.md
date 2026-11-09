@@ -113,10 +113,6 @@ infra/
 │   ├── clinical.Dockerfile       # FROM core + clinical deps (stub)
 │   └── utility.Dockerfile        # FROM core + utility deps (stub)
 │
-├── elasticsearch/
-│   └── mappings/
-│       └── docs_v1.json          # Elasticsearch index mapping
-│
 ├── postgres/
 │   └── 01_init.sql               # DB creation + schema init
 │

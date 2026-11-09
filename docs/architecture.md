@@ -278,6 +278,7 @@ Managed entirely by Airflow — DocKA never reads or writes to this database.
 ### Elasticsearch — `docka_documents`
 
 Search index. Stores full document content for BM25 retrieval.
+Mapping file: `core/ingestion/mappings/docs_v1.json`, applied by `ensure_index()` when the index is created.
 
 ```json
 {
@@ -289,7 +290,7 @@ Search index. Stores full document content for BM25 retrieval.
       "title":      { "type": "text", "analyzer": "standard" },
       "content":    { "type": "text", "analyzer": "standard" },
       "language":   { "type": "keyword" },
-      "checksum":   { "type": "keyword", "index": false },
+      "checksum":   { "type": "keyword" },
       "created_at": { "type": "date" }
     }
   }
@@ -297,7 +298,8 @@ Search index. Stores full document content for BM25 retrieval.
 ```
 
 **Key decisions:**
-- `path` and `checksum` are `index: false` — stored but not searchable (no value in searching these)
+- `path` is `index: false` — stored but not searchable (no value in searching it)
+- `checksum` is an indexed `keyword` — the ingestion idempotency check runs a `term` query on it
 - `title` is boosted 3x at query time (`title^3`) — title matches rank higher than content matches
 - `content.keyword` is ignored for very long texts — this is expected Elasticsearch behavior
 

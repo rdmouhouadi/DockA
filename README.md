@@ -263,6 +263,7 @@ docka/
 │   │   │   ├── ingest_folder.py
 │   │   │   ├── ingest_postgres.py
 │   │   │   └── ingest_elasticsearch.py
+│   │   ├── mappings/             # Elasticsearch index mapping (docs_v1.json)
 │   │   └── airflow/              # Airflow adapter (DAGs only)
 │   │       └── dags/
 │   ├── app/
@@ -286,7 +287,6 @@ docka/
 │
 ├── infra/
 │   ├── docker/                   # api / ui / airflow + core and vertical Dockerfiles
-│   ├── elasticsearch/            # Index mappings
 │   ├── postgres/                 # Init SQL
 │   ├── docker-compose.yml        # Full stack
 │   ├── docker-compose.core.yml   # Core only
