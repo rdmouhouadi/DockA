@@ -108,7 +108,10 @@ infra/
 │   ├── api.Dockerfile            # FastAPI container
 │   ├── ui.Dockerfile             # Streamlit container
 │   ├── airflow.Dockerfile        # Airflow container
-│   └── airflow.requirements.txt  # Python deps for Airflow worker
+│   ├── airflow.requirements.txt  # Python deps for Airflow worker
+│   ├── core.Dockerfile           # Base image shared by all verticals
+│   ├── clinical.Dockerfile       # FROM core + clinical deps (stub)
+│   └── utility.Dockerfile        # FROM core + utility deps (stub)
 │
 ├── elasticsearch/
 │   └── mappings/
@@ -117,8 +120,21 @@ infra/
 ├── postgres/
 │   └── 01_init.sql               # DB creation + schema init
 │
-└── docker-compose.yml            # Local orchestration
+├── docker-compose.yml            # Full stack entry point (includes the files below)
+├── docker-compose.core.yml       # Core services — single definition
+└── docker-compose.clinical.yml   # Core + Neo4j (DocKA Clinical)
 ```
+
+Which stack to run (from `infra/`):
+
+| Command | Starts |
+|---------|--------|
+| `docker compose up -d` | Full stack (currently core only) |
+| `docker compose -f docker-compose.core.yml up -d` | Core only |
+| `docker compose -f docker-compose.clinical.yml up -d` | Core + Neo4j |
+
+Compose files share services via `include:` (Docker Compose v2.20+), so each
+service is defined exactly once.
 
 ---
 
